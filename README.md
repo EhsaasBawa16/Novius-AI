@@ -2,9 +2,15 @@
 
 Novius is an open-source, lightweight AI chat app written in pure Python + NumPy —
 no ML frameworks. It ships with four GPT-style transformer models trained from
-scratch on modern English: Wikipedia, dictionary definitions, simple stories and
-internet chat. Every reply is generated token-by-token; nothing is scripted or
-predefined.
+scratch on modern English (Wikipedia, dictionary definitions, simple stories and
+internet chat), plus a real knowledge layer so questions get actual answers:
+
+- **Math** — type `what is 23*7`, `sqrt 144`, `15% of 80`, `2^10` → computed for real
+- **Definitions** — `what is love?`, `what is photosynthesis?` → real definitions
+  from an embedded 10,000-word WordNet dictionary (no download needed)
+- **Knowledge** — `who was einstein?`, `capital of france`, `what is a black hole?`
+  → from a built-in fact base
+- **Everything else** — generated token-by-token by the neural models
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
