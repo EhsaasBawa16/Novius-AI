@@ -2,12 +2,20 @@
 Novius - a ChatGPT-style AI chat app in pure Python + NumPy.
 
 A local web UI (no frameworks, stdlib only) for a family of four
-GPT-style transformer models trained from scratch on English text:
+GPT-style transformer models trained from scratch on general English:
 
-  Avion  V1.0 - the very fast thinker (smallest net, instant replies)
-  Qlux   V1.0 - quick thinker (small net, brief thinking phase)
-  Crusta V1.0 - balanced thinker (medium net, medium thinking phase)
-  Hyron  V1.0 - the most powerful thinker (largest net, deepest thinking)
+  Avion  V2.0 - the very fast thinker (smallest net, instant replies)
+  Qlux   V2.0 - quick thinker (small net, brief thinking phase)
+  Crusta V2.0 - balanced thinker (medium net, medium thinking phase)
+  Hyron  V2.0 - the most powerful thinker (largest net, deepest thinking)
+
+Training data (auto-downloaded on first train, ~400 MB total):
+  WikiText-103      real English Wikipedia articles
+  WordNet           dictionary definitions for ~80k word senses, turned into
+                    question -> answer pairs ("what is love? / Love is ...")
+  Webster dictionary  ~40k extra word definitions
+  TinyStories       clean, grammatical simple English stories
+  chat corpus       internet slang, broken grammar and everyday Q&A
 
 Every reply is generated token-by-token - no predefined answers. The
 "thinking power" of each model is real: bigger network, more context
@@ -15,15 +23,20 @@ compute, and a longer thinking phase (the model first generates thought
 tokens, then answers conditioned on them).
 
 Files (created next to this script):
-  corpus.txt            training text (auto-downloaded on first train)
+  corpus.txt            assembled training text
+  corpus_tokens.npy     tokenized corpus cache
+  corpus_tokenizer.json tokenizer cache
+  finetune.txt          Q&A + chat data used for the final tuning pass
   weights_avion.txt     trained weights per model (plain-text JSON)
   weights_qlux.txt
   weights_crusta.txt
   weights_hyron.txt
 
 Usage:
-  python novius.py train            train all models (~1 hour total on CPU)
+  python novius.py train            train all models (several hours on CPU)
   python novius.py train hyron      train a single model
+  python novius.py finetune         final Q&A tuning pass on all models
+  python novius.py finetune hyron   tune a single model
   python novius.py                  start the Novius web UI (http://127.0.0.1:8763)
   python novius.py gen hyron "hi"   one-shot generation in the terminal
 
@@ -42,51 +55,59 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA_URL = ("https://raw.githubusercontent.com/karpathy/char-rnn/"
-            "master/data/tinyshakespeare/input.txt")
+WIKI_URL = "https://wikitext.smerity.com/wikitext-103-raw-v1.zip"
+WORDNET_URL = ("https://raw.githubusercontent.com/nltk/nltk_data/"
+               "gh-pages/packages/corpora/wordnet.zip")
+DICT_URL = "https://raw.githubusercontent.com/adambom/dictionary/master/dictionary.json"
+STORIES_URL = ("https://huggingface.co/datasets/roneneldan/TinyStories/"
+               "resolve/main/TinyStories-train.txt")
 CORPUS_FILE = os.path.join(HERE, "corpus.txt")
+TOKENS_FILE = os.path.join(HERE, "corpus_tokens.npy")
+TOKCACHE_FILE = os.path.join(HERE, "corpus_tokenizer.json")
+FT_FILE = os.path.join(HERE, "finetune.txt")
+FT_TOKENS_FILE = os.path.join(HERE, "finetune_tokens.npy")
 PORT = 8763
 
 BASE_CONFIG = {
-    "vocab_size": 512,
+    "vocab_size": 2048,
     "block_size": 64,
 }
 
 MODEL_ZOO = {
     "avion": {
-        "label": "Avion V1.0",
+        "label": "Avion V2.0",
         "tagline": "The very fast thinker",
         "badge": "Fastest",
-        "config": {"d_model": 64, "n_heads": 4, "n_layers": 1, "d_ff": 256},
-        "train_steps": 3000,
-        "gen": {"max_new_tokens": 80, "temperature": 0.9, "top_k": 30,
+        "config": {"d_model": 96, "n_heads": 4, "n_layers": 1, "d_ff": 384},
+        "train_steps": 2000,
+        "gen": {"max_new_tokens": 90, "temperature": 0.75, "top_k": 40,
                 "think_tokens": 0},
     },
     "qlux": {
-        "label": "Qlux V1.0",
+        "label": "Qlux V2.0",
         "tagline": "Quick thinker",
         "badge": "Quick",
-        "config": {"d_model": 96, "n_heads": 4, "n_layers": 2, "d_ff": 384},
-        "train_steps": 4000,
-        "gen": {"max_new_tokens": 100, "temperature": 0.85, "top_k": 40,
+        "config": {"d_model": 128, "n_heads": 4, "n_layers": 2, "d_ff": 512},
+        "train_steps": 2200,
+        "gen": {"max_new_tokens": 110, "temperature": 0.7, "top_k": 50,
                 "think_tokens": 12},
     },
     "crusta": {
-        "label": "Crusta V1.0",
+        "label": "Crusta V2.0",
         "tagline": "Balanced thinker",
         "badge": "Balanced",
-        "config": {"d_model": 128, "n_heads": 4, "n_layers": 2, "d_ff": 512},
-        "train_steps": 5500,
-        "gen": {"max_new_tokens": 120, "temperature": 0.8, "top_k": 40,
+        "config": {"d_model": 192, "n_heads": 6, "n_layers": 3, "d_ff": 768},
+        "train_steps": 2500,
+        "gen": {"max_new_tokens": 130, "temperature": 0.65, "top_k": 50,
                 "think_tokens": 24},
     },
     "hyron": {
-        "label": "Hyron V1.0",
+        "label": "Hyron V2.0",
         "tagline": "The most powerful thinker",
         "badge": "Most powerful",
-        "config": {"d_model": 192, "n_heads": 6, "n_layers": 3, "d_ff": 768},
-        "train_steps": 3000,
-        "gen": {"max_new_tokens": 150, "temperature": 0.75, "top_k": 50,
+        "config": {"d_model": 256, "n_heads": 8, "n_layers": 4, "d_ff": 1024},
+        "train_steps": 2500,
+        "gen": {"max_new_tokens": 160, "temperature": 0.6, "top_k": 60,
                 "think_tokens": 48},
     },
 }
@@ -122,24 +143,30 @@ class BPETokenizer:
 
     def train(self, text):
         counts = Counter(PRETOK.findall(text))
-        words = [(list(w), c) for w, c in counts.items()]
-        base = sorted({ch for syms, _ in words for ch in syms})
+        words = {}
+        pair_counts = Counter()
+        pair_words = {}
+        for wid, (w, c) in enumerate(counts.items()):
+            syms = list(w)
+            words[wid] = [syms, c]
+            for pair in zip(syms, syms[1:]):
+                pair_counts[pair] += c
+                pair_words.setdefault(pair, set()).add(wid)
+        base = sorted({ch for syms, _ in words.values() for ch in syms})
         self.vocab = list(base)
         self.tok2id = {t: i for i, t in enumerate(self.vocab)}
-        while len(self.vocab) < self.vocab_size:
-            pairs = Counter()
-            for syms, c in words:
-                for a, b in zip(syms, syms[1:]):
-                    pairs[(a, b)] += c
-            if not pairs:
-                break
-            best = max(pairs, key=pairs.get)
+        while len(self.vocab) < self.vocab_size and pair_counts:
+            best = max(pair_counts, key=pair_counts.get)
             new = best[0] + best[1]
             self.merges.append(best)
             self.tok2id[new] = len(self.vocab)
             self.vocab.append(new)
-            merged = []
-            for syms, c in words:
+            for wid in pair_words.pop(best, set()):
+                syms, c = words[wid]
+                for pair in zip(syms, syms[1:]):
+                    pair_counts[pair] -= c
+                    if pair_counts[pair] <= 0:
+                        del pair_counts[pair]
                 out, i = [], 0
                 while i < len(syms):
                     if i < len(syms) - 1 and (syms[i], syms[i + 1]) == best:
@@ -148,8 +175,10 @@ class BPETokenizer:
                     else:
                         out.append(syms[i])
                         i += 1
-                merged.append((out, c))
-            words = merged
+                words[wid][0] = out
+                for pair in zip(out, out[1:]):
+                    pair_counts[pair] += c
+                    pair_words.setdefault(pair, set()).add(wid)
         self._cache = {}
 
     def _encode_word(self, w):
@@ -389,15 +418,523 @@ class Adam:
 # Training
 # --------------------------------------------------------------------------
 
+SLANG_CORPUS = """
+yo whats good
+hiii heyy wsup
+wsp bro
+nm u?
+hows it going
+pretty good ngl hbu
+long time no see!
+fr we should catch up soon
+wyd this weekend
+idk yet probs just chill
+u tryna hang out later?
+bet im down
+aight see u then
+later bro
+peace
+gn yall
+gm world
+tbh that movie was mid ngl
+fr fr no cap
+sheesh bussin bussin
+lowkey sus ngl
+thats so cringe lol
+W take fr
+took an L today smh
+brb food time
+idk abt that tbh
+u wanna hop on the game?
+ur goated for that
+bro this pizza is bussin no cap
+its giving main character energy
+vibing rn ngl
+bet lets gooo
+pls dont be sus
+omg yesss slay
+thats cap and u know it
+my bad gang
+yooo thats fire
+dawg im dead lol
+hbu? wyd tonite
+smh they did us dirty
+yeet
+im so tired rn ugh
+cant rn im busy af
+tyty appreciate it
+np anytime
+gg well played
+ez clap
+ratio + L + didnt ask
+go touch grass bro
+based take ngl
+sheeeesh
+lets gooo we won
+im cooked
+thats tuff
+on god fr
+deadass?
+lowkey wanna nap
+highkey obsessed with this song
+its the bare minimum tbh
+living rent free in my head
+he understood the assignment
+main character moment
+not me forgetting again lol
+we move
+sending good vibes ur way
+u ate that fr
+no crumbs left
+periodt
+im weak lol
+bruh moment
+bro really said that??
+nah cus why is he like that
+istg this app is broken
+gng we up
+locked in fr
+cook mode activated
+let him cook
+nah hes cooked
+im gonna crash out lol
+chill bro its not that deep
+fr tho
+real talk
+straight up
+no lie detected
+u already know
+say less
+done deal
+bet
+my guy
+big brain move
+galaxy brain take
+smooth brain moment
+skill issue tbh
+git gud
+cry about it
+stay mad lol
+cope harder
+seethe
+malding rn
+poggers
+lets get this bread
+grind never stops
+hustle mode on
+im him fr
+she is her
+ate and left no crumbs
+devoured that
+unserious behavior
+chronically online take
+touch some grass my dude
+logging off for today
+afk for a bit
+back kk
+wb everyone
+missed u all
+good vibes only
+negative energy left the chat
+this chat is so alive rn
+lurking lol
+just got here wdid i miss
+nothing much same old
+spill the tea
+no tea no shade
+thats the tea sis
+shade thrown lol
+messy behavior ngl
+drama everywhere today
+minding my business
+nosy ass lol
+jk jk
+lol lmao rofl
+hahaha thats funny af
+dying of laughter rn
+im crying this is so funny
+send help lol
+help im screaming
+screaming crying throwing up
+emotional damage
+bruhhhh
+broooo
+duuuude
+mannn
+ugh fine
+ok ok i get it
+my bad fr
+forgive me pls
+u know i love u right
+aww stahp
+ur so sweet
+ily mean it
+heart u too
+bestie energy
+bestie ur iconic
+slay queen
+yasss
+werk
+ok period
+thats on god
+on my mama
+swear down
+promise fr
+pinky promise lol
+jk unless?
+unlesss...
+wait what
+hold up
+say sike rn
+ur kidding right
+no way bro
+wayyy bro
+fr?
+for real for real
+hundred percent
+facts no printer
+receipts or it didnt happen
+screenshot that lol
+archived forever
+screenshotted and framed
+lmaooo im framing this
+old but gold
+vintage meme
+retro vibes
+dank meme alert
+meme lord
+king of memes
+meme review
+reviewing now
+its a masterpiece
+chef's kiss
+muah
+italian kiss emoji
+mwah mwah
+okay love u bye
+cya
+adios
+sayonara
+au revoir my friend
+farewell gamer
+gg go next
+next round
+rematch?
+u bet
+bring it on
+im ready
+game on
+lets a go
+wahoo
+yippee
+hurray we did it
+confetti time
+party mode
+lets celebrate
+pizza on me
+ur the best
+ikr
+ikr!!
+totally
+for sure
+absolutely
+negative ghost rider
+affirmative
+roger that
+copy that
+10-4 good buddy
+over and out
+what is love?
+love is when u care about someone so much u cant stop thinking about them
+love is a warm feeling in ur chest when someone makes u happy
+love is caring about someone more than urself
+being in love means u want the best for that person always
+what is a friend?
+a friend is someone who got ur back no matter what
+what is happiness?
+happiness is when u feel good inside for no reason at all
+what is sadness?
+sadness is that heavy feeling when something hurts ur heart
+what is life?
+life is the time u get to spend doing things u care about with people u love
+what is music?
+music is sound that makes u feel something
+what is a family?
+family is the people who love u even when ur difficult
+what is school?
+school is where u go to learn new things every day
+what is the internet?
+the internet is a giant network connecting computers all over the world
+what is a computer?
+a computer is a machine that follows instructions really fast
+what is ai?
+ai is when a computer learns to do things that normally need a human brain
+what is a phone?
+a phone is a device u use to talk and text people
+what is money?
+money is what people use to buy things they need or want
+what is food?
+food is what u eat to get energy and stay alive
+what is sleep?
+sleep is when ur body rests and recharges
+what is a dream?
+a dream is the story ur brain makes while u sleep
+what is time?
+time is how we measure moments passing
+what is the sun?
+the sun is the giant star that gives us light and warmth
+what is the moon?
+the moon is the rock that circles earth and glows at night
+what is rain?
+rain is water falling from clouds
+what is snow?
+snow is frozen water falling in soft white flakes
+how are you?
+im doing good thanks for asking
+im great how about u
+whats up?
+not much just vibing
+who are you?
+im novius a little ai u can chat with
+whats ur name?
+my name is novius
+what can u do?
+i can chat with u and try to answer stuff
+how old are u?
+im a computer program so i dont really age lol
+where are u from?
+i live inside a computer rn
+what day is it?
+i dont have a calendar bro sorry
+tell me a joke
+why dont scientists trust atoms cuz they make up everything
+good morning
+morning hope today treats u well
+good night
+gn sleep well
+thank you
+np anytime
+i love u
+aww ily too ur the best
+im sad
+im sorry to hear that wanna talk about it
+im happy
+thats awesome glad ur feeling good
+im bored
+same lets chat about something fun
+im tired
+u should get some rest fr
+what should i eat?
+something bussin idk maybe pizza
+whats the weather?
+i cant check outside but hope its nice where u are
+"""
+
+
+def _download(url, out, max_bytes=None):
+    if os.path.exists(out):
+        return
+    print(f"Downloading {os.path.basename(out)} ...")
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    stream = urllib.request.urlopen(req, timeout=120)
+    chunks = []
+    total = 0
+    while True:
+        piece = stream.read(1 << 20)
+        if not piece:
+            break
+        chunks.append(piece)
+        total += len(piece)
+        if max_bytes and total >= max_bytes:
+            break
+    stream.close()
+    with open(out, "wb") as f:
+        for piece in chunks:
+            f.write(piece)
+
+
+def _wordnet_lines(wndir, limit=80000):
+    lines = []
+    for fn in ("data.noun", "data.verb", "data.adj", "data.adv"):
+        path = os.path.join(wndir, fn)
+        if not os.path.exists(path):
+            continue
+        for line in open(path, encoding="utf-8", errors="ignore"):
+            if "|" not in line or line.startswith("  "):
+                continue
+            head, gloss = line.split("|", 1)
+            gloss = gloss.strip().rstrip(";")
+            parts = head.split()
+            lemmas = []
+            for p in parts[4:]:
+                word = p.split("#")[0].replace("_", " ")
+                if word not in lemmas:
+                    lemmas.append(word)
+                if len(lemmas) == 3:
+                    break
+            if lemmas and len(gloss) >= 10:
+                lines.append(f"{', '.join(lemmas)}: {gloss}.")
+            if len(lines) >= limit:
+                return lines
+    return lines
+
+
+def _dictionary_lines(path, limit=40000):
+    import json as _json
+    data = _json.load(open(path, encoding="utf-8", errors="ignore"))
+    lines = []
+    for word, definition in data.items():
+        word = str(word).strip().lower()
+        definition = " ".join(str(definition).split())
+        if not word.isalpha() or len(word) < 3 or not (20 <= len(definition) <= 220):
+            continue
+        lines.append(f"{word}: {definition}")
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def _wordnet_qa(wndir, limit=80000):
+    from collections import Counter
+    pairs = []
+    for fn in ("data.noun", "data.verb", "data.adj", "data.adv"):
+        path = os.path.join(wndir, fn)
+        if not os.path.exists(path):
+            continue
+        for line in open(path, encoding="utf-8", errors="ignore"):
+            if "|" not in line or line.startswith("  "):
+                continue
+            head, gloss = line.split("|", 1)
+            gloss = " ".join(gloss.strip().rstrip(";").split())
+            parts = head.split()
+            lemmas = []
+            for p in parts[4:]:
+                word = p.split("#")[0].replace("_", " ")
+                if word not in lemmas:
+                    lemmas.append(word)
+                if len(lemmas) == 2:
+                    break
+            if lemmas and 15 <= len(gloss) <= 200:
+                pairs.append((lemmas[0], gloss))
+            if len(pairs) >= limit:
+                break
+    senses = Counter(word for word, _ in pairs)
+    lines = [f"what is {word}?\n{word.capitalize()} is {gloss}."
+             for word, gloss in pairs]
+    return lines, senses
+
+
+COMMON_URL = ("https://raw.githubusercontent.com/first20hours/"
+              "google-10000-english/master/google-10000-english.txt")
+
+
+def _common_words():
+    path = os.path.join(HERE, "common_words.txt")
+    if not os.path.exists(path):
+        _download(COMMON_URL, path)
+        words = [w.strip() for w in open(path, encoding="utf-8")
+                 if w.strip().isalpha()]
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(words[:10000]))
+    return [w.strip().lower() for w in open(path, encoding="utf-8")
+            if w.strip()]
+
+
+def _qa_parts(wndir, stories_path):
+    qa, senses = _wordnet_qa(wndir)
+    qa_words = {l.split("\n")[0][8:-1] for l in qa}
+    freq_list = [w for w in _common_words() if w in qa_words]
+    freq = set(freq_list)
+    poly = {w for w, c in senses.items() if c >= 3}
+    common = sorted(poly | freq, key=lambda w: -senses.get(w, 1))[:6000]
+    common_set = set(common)
+    seen = set()
+    common_qa = []
+    for l in qa:
+        w = l.split("\n")[0][8:-1]
+        if w in common_set and w not in seen:
+            seen.add(w)
+            common_qa.append(l)
+    top_rank = {w: i for i, w in enumerate(freq_list[:1000])}
+    top_qa = [l for l in common_qa
+              if top_rank.get(l.split("\n")[0][8:-1], 10 ** 9) < 10 ** 9]
+    rest_qa = [l for l in common_qa if l not in top_qa]
+    slang = SLANG_CORPUS.strip()
+    with open(stories_path, "r", encoding="utf-8", errors="ignore") as f:
+        stories_head = f.read(2_000_000)
+    return qa, top_qa, rest_qa, slang, stories_head
+
+
 def ensure_corpus():
     if os.path.exists(CORPUS_FILE):
+        if not os.path.exists(FT_FILE):
+            _download(STORIES_URL, os.path.join(HERE, "tinystories.txt"),
+                      max_bytes=35_000_000)
+            _, top_qa, rest_qa, slang, stories_head = _qa_parts(
+                os.path.join(HERE, "wordnet_pkg", "wordnet"),
+                os.path.join(HERE, "tinystories.txt"))
+            ft = (("\n".join(top_qa) + "\n") * 100
+                  + ("\n".join(rest_qa) + "\n") * 20
+                  + (slang + "\n") * 20
+                  + stories_head)
+            with open(FT_FILE, "w", encoding="utf-8") as f:
+                f.write(ft)
         with open(CORPUS_FILE, "r", encoding="utf-8") as f:
             return f.read()
-    print("Downloading training corpus ...")
-    import urllib.request
-    text = urllib.request.urlopen(DATA_URL, timeout=60).read().decode("utf-8")
+    print("Assembling training corpus (Wikipedia + WordNet + dictionary "
+          "+ stories + chat slang) ...")
+    parts = []
+
+    wiki_zip = os.path.join(HERE, "wikitext.zip")
+    _download(WIKI_URL, wiki_zip)
+    import zipfile
+    with zipfile.ZipFile(wiki_zip) as zf:
+        with zf.open("wikitext-103-raw/wiki.train.raw") as f:
+            n = 0
+            while True:
+                chunk = f.read(4_500_000)
+                if not chunk:
+                    break
+                n += 1
+                if n % 8 == 0:
+                    parts.append(chunk.decode("utf-8", errors="ignore"))
+
+    stories = os.path.join(HERE, "tinystories.txt")
+    _download(STORIES_URL, stories, max_bytes=35_000_000)
+    with open(stories, "r", encoding="utf-8", errors="ignore") as f:
+        parts.append(f.read(20_000_000))
+
+    dict_json = os.path.join(HERE, "dictionary.json")
+    _download(DICT_URL, dict_json)
+
+    wordnet_zip = os.path.join(HERE, "wordnet.zip")
+    _download(WORDNET_URL, wordnet_zip)
+    wndir = os.path.join(HERE, "wordnet_pkg", "wordnet")
+    if not os.path.exists(wndir):
+        with zipfile.ZipFile(wordnet_zip) as zf:
+            zf.extractall(os.path.join(HERE, "wordnet_pkg"))
+    parts.append("\n".join(_wordnet_lines(wndir)))
+
+    parts.append("\n".join(_dictionary_lines(dict_json)))
+
+    qa, top_qa, rest_qa, slang, stories_head = _qa_parts(wndir, stories)
+    parts.append(("\n".join(qa) + "\n") * 3)
+    parts.append(("\n".join(top_qa + rest_qa) + "\n") * 100)
+    parts.append((slang + "\n") * 100)
+
+    ft = (("\n".join(top_qa) + "\n") * 100
+          + ("\n".join(rest_qa) + "\n") * 20
+          + (slang + "\n") * 20
+          + stories_head)
+    with open(FT_FILE, "w", encoding="utf-8") as f:
+        f.write(ft)
+
+    text = "\n".join(parts)
     with open(CORPUS_FILE, "w", encoding="utf-8") as f:
         f.write(text)
+    print(f"Corpus assembled: {len(text) / 1e6:.0f} MB, "
+          f"~{len(text) // 4:,} tokens.")
     return text
 
 
@@ -416,16 +953,77 @@ def loss_and_grads(model, x, y):
     return float(loss), grads
 
 
+def tokenize_corpus(tok, text):
+    from array import array
+    ids = array("i")
+    total = len(text)
+    step = 5_000_000
+    for start in range(0, total, step):
+        end = min(start + step, total)
+        while end < total and not text[end].isspace():
+            end += 1
+        for w in PRETOK.findall(text[start:end]):
+            ids.extend(tok._encode_word(w))
+        print(f"  tokenized {end / 1e6:.0f}/{total / 1e6:.0f} MB")
+    return np.frombuffer(ids, dtype=np.int32).copy()
+
+
+def load_tokenized_corpus():
+    if os.path.exists(TOKENS_FILE) and os.path.exists(TOKCACHE_FILE):
+        data = np.load(TOKENS_FILE)
+        payload = json.load(open(TOKCACHE_FILE, encoding="utf-8"))
+        return data, BPETokenizer.from_payload(payload)
+    text = ensure_corpus()
+    tok = BPETokenizer(BASE_CONFIG["vocab_size"])
+    print("Training BPE tokenizer (2048 merges) ...")
+    tok.train(text[:8_000_000])
+    data = tokenize_corpus(tok, text)
+    np.save(TOKENS_FILE, data)
+    with open(TOKCACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(tok.payload(), f)
+    return data, tok
+
+
+def load_finetune_corpus():
+    if os.path.exists(FT_TOKENS_FILE) and os.path.exists(TOKCACHE_FILE):
+        data = np.load(FT_TOKENS_FILE)
+        payload = json.load(open(TOKCACHE_FILE, encoding="utf-8"))
+        return data, BPETokenizer.from_payload(payload)
+    tok = BPETokenizer.from_payload(
+        json.load(open(TOKCACHE_FILE, encoding="utf-8")))
+    with open(FT_FILE, "r", encoding="utf-8") as f:
+        data = tokenize_corpus(tok, f.read())
+    np.save(FT_TOKENS_FILE, data)
+    return data, tok
+
+
+def finetune_model(name, steps=1500, lr=5e-4):
+    spec = MODEL_ZOO[name]
+    model, tok = GPT.load(weights_path(name))
+    data, _ = load_finetune_corpus()
+    opt = Adam(model.p)
+    rng = np.random.default_rng(SEED)
+    T, B = model.config["block_size"], BATCH_SIZE
+    print(f"[{spec['label']}] finetune on Q&A + chat data: "
+          f"{len(data):,} tokens, {steps} steps ...")
+    for step in range(1, steps + 1):
+        ix = rng.integers(0, len(data) - T - 1, size=B)
+        x = np.stack([data[i:i + T] for i in ix])
+        y = np.stack([data[i + 1:i + T + 1] for i in ix])
+        loss, grads = loss_and_grads(model, x, y)
+        opt.step(model.p, grads, lr)
+        if step % 100 == 0 or step == 1:
+            print(f"[{spec['label']}] finetune {step:4d}  loss {loss:.4f}")
+    model.save(tok, weights_path(name))
+    print(f"[{spec['label']}] finetune done - loss {loss:.4f}, "
+          f"saved weights file")
+
+
 def train_model(name):
     spec = MODEL_ZOO[name]
-    text = ensure_corpus()
-    print(f"[{spec['label']}] corpus {len(text):,} chars, training BPE ...")
-    tok = BPETokenizer(BASE_CONFIG["vocab_size"])
-    tok.train(text)
-    ids = []
-    for w in PRETOK.findall(text):
-        ids.extend(tok._encode_word(w))
-    data = np.array(ids, dtype=np.int32)
+    data, tok = load_tokenized_corpus()
+    print(f"[{spec['label']}] corpus: {len(data):,} tokens, "
+          f"vocab {len(tok.vocab)}")
 
     config = dict(BASE_CONFIG, **spec["config"])
     model = GPT(config)
@@ -689,8 +1287,8 @@ PAGE = r"""<!doctype html>
     <textarea id="input" rows="1" placeholder="Message Novius..."></textarea>
     <button id="send" title="Send">&#8593;</button>
   </div>
-  <div class="hint">Novius is a tiny research model trained on Shakespeare -
-  expect poetry, not facts. Enter to send.</div></div>
+  <div class="hint">Novius is a lightweight open-source AI trained on
+  Wikipedia, WordNet and internet chat - Enter to send.</div></div>
 </main>
 <script>
 const feed = document.getElementById('feed');
@@ -880,6 +1478,10 @@ def main():
     if cmd == "train":
         names = sys.argv[2:] or list(MODEL_ZOO)
         train(names)
+    elif cmd == "finetune":
+        names = sys.argv[2:] or list(MODEL_ZOO)
+        for n in names:
+            finetune_model(n)
     elif cmd == "gen":
         name = sys.argv[2] if len(sys.argv) > 2 else "crusta"
         prompt = sys.argv[3] if len(sys.argv) > 3 else ""
