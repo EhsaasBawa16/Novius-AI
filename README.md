@@ -3,45 +3,51 @@
 Novius is an open-source, lightweight AI chat app written in pure Python + NumPy —
 no ML frameworks. It ships with four GPT-style transformer models trained from
 scratch on modern English (Wikipedia, dictionary definitions, simple stories and
-internet chat), plus a real knowledge layer so questions get actual answers:
+internet chat).
 
-- **Math** — type `what is 23*7`, `sqrt 144`, `15% of 80`, `2^10` → computed for real
-- **Definitions** — `what is love?`, `what is photosynthesis?` → real definitions
-  from an embedded 10,000-word WordNet dictionary (no download needed)
-- **Knowledge** — `who was einstein?`, `capital of france`, `what is a black hole?`
-  → from a built-in fact base
-- **Everything else** — generated token-by-token by the neural models
+**No predefined answers.** Every reply is generated token-by-token by the neural
+models. There is no embedded dictionary lookup, no fact base, no canned smalltalk
+— the models learned to answer from the training data itself. The only non-neural
+tool is an exact **calculator** for arithmetic (`what is 23*7`, `sqrt 144`,
+`15% of 80`, `2^10`), which small networks cannot learn reliably.
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
-## The models
+## The models (V3.0)
 
 | Model | Params | Architecture | Thinking phase |
 |---|---|---|---|
-| **Avion V2.0** — the very fast thinker | 511k | 1 layer × 96, 4 heads | none (instant) |
-| **Qlux V2.0** — quick thinker | 929k | 2 layers × 128, 4 heads | 12 thought tokens |
-| **Crusta V2.0** — balanced thinker | 2.1M | 3 layers × 192, 6 heads | 24 thought tokens |
-| **Hyron V2.0** — the most powerful thinker | 4.2M | 4 layers × 256, 8 heads | 48 thought tokens |
+| **Avion V3.0** — the very fast thinker | 234k | 2 layers × 64, 4 heads | none (instant) |
+| **Qlux V3.0** — quick thinker | 664k | 2 layers × 128, 4 heads | 12 thought tokens |
+| **Crusta V3.0** — balanced thinker | 1.7M | 3 layers × 192, 6 heads | 24 thought tokens |
+| **Hyron V3.0** — the most powerful thinker | 5.3M | 6 layers × 256, 8 heads | 48 thought tokens |
 
 The "thinking" is real: heavier models first generate thought tokens at a higher
 temperature (shown in a collapsible *Thought process* panel), then generate their
-answer conditioned on both your message and their thoughts.
+answer. Thoughts are display-only — they are never fed back into the answer
+context, which keeps answers clean.
 
 ## What it learned
 
 Training data (auto-downloaded on first training, ~400 MB total):
 
-- **WikiText-103** — real English Wikipedia articles
+- **WikiText-103** — real English Wikipedia articles (46M-token corpus)
 - **WordNet** — ~80k word senses, converted into question → answer pairs
-  (`what is love?` → `Love is any object of warm affection or devotion...`)
+  (`what is love?` → `love is a strong positive emotion of regard and affection...`)
 - **Dictionary** — ~40k extra word definitions
 - **TinyStories** — clean, grammatical simple English
 - **Chat corpus** — internet slang, broken grammar (`we was late lol`,
   `should of known better`) and everyday Q&A
 
-After the main training pass, every model gets a final tuning pass on the
-Q&A + chat data only, so it learned to *answer* questions in plain modern
-English instead of just continuing stories.
+Training is a **two-pass** process:
+
+1. **Main pass** — every model reads the full ~46M-token corpus (wiki + stories +
+   dictionary Q&A + slang) so it learns English itself: grammar, words, facts.
+2. **Finetune pass** — a focused pass on dialogue-formatted data
+   (`user: ...` / `novius: ...`) built from the Q&A pairs and chat corpus, so the
+   models *answer* questions in plain modern English instead of just continuing
+   stories. Finetune data uses the exact same format the app uses at inference
+   time.
 
 ## Setup
 
@@ -51,7 +57,7 @@ pip install numpy
 
 Pre-trained weights are included in this repo (`weights_*.txt`). To train any
 model from scratch yourself, delete its weights file and run the train command
-below (~30 min for Avion up to ~2 hours for Hyron on a typical CPU).
+below (~30 min for Avion up to a few hours for Hyron on a typical CPU).
 
 ## Usage
 
@@ -86,19 +92,21 @@ for e in events:
   softmax cross-entropy, Adam with warmup + cosine decay and gradient clipping.
   All forward/backward math is hand-written NumPy, verified against finite
   differences.
-- **Training** — two passes: a main pass over the full ~95M-token corpus, then a
-  focused finetune pass over question→answer and chat data so the models respond
-  to questions instead of just continuing text.
+- **Training** — main pass over the full corpus, then a dialogue-format finetune
+  pass (see above).
+- **Calculator tool** — a small AST-whitelisted evaluator handles arithmetic
+  prompts before generation; everything else goes to the neural models.
 - **UI** — dependency-free local web server (stdlib `http.server`) with a
-  streaming ChatGPT-style interface (black background, blue/green auroras).
-  Binds to `127.0.0.1` only.
+  streaming ChatGPT-style interface: black background, animated blue/green
+  auroras, glassmorphism panels, suggestion chips, copy buttons, thinking
+  phases, and a mobile layout. Binds to `127.0.0.1` only.
 
 ## Notes
 
-- These are still small models (0.5–4M params) running on a CPU: expect simple,
-  sometimes wobbly English and basic knowledge, not factual assistant-level
-  answers. But they answer in modern English, understand casual/slang messages,
-  and get basic definitions right.
+- These are still small models (0.2–5M params) running on a CPU: expect simple,
+  sometimes wobbly English and best-effort definitions — not factual
+  assistant-level answers. They chat naturally, understand casual/slang
+  messages, and get common word definitions right most of the time.
 - To make a model stronger, edit its entry in `MODEL_ZOO` inside `novius.py`
   (bigger `d_model` / `n_layers` / `train_steps`) and retrain.
 
