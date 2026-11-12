@@ -23,8 +23,11 @@ general English (wiki + stories + dictionary Q&A + slang), then a finetune
 pass on dialogue-formatted Q&A and chat data so the models answer in the
 right format. The only non-neural tool is an exact calculator for arithmetic
 ("what is 23*7", "15% of 80", "sqrt 144"), which small networks cannot
-learn reliably. The "thinking power" of each model is real: bigger network,
-more layers, and a longer thinking phase.
+learn reliably. A second tool, "Internet research" (toggle in the UI), lets
+Novius search Wikipedia live and answer from real retrieved text with a
+source link - useful for facts the tiny models never memorized. Otherwise
+answers come purely from the neural models. The "thinking power" of each
+model is real: bigger network, more layers, and a longer thinking phase.
 
 Files (created next to this script):
   corpus.txt            assembled training text
@@ -1240,6 +1243,51 @@ def _try_math(prompt):
         return None
 
 
+# --------------------------------------------------------------------------
+# Internet research tool (live Wikipedia lookup, used only when the user
+# enables the "Internet research" toggle in the UI)
+# --------------------------------------------------------------------------
+
+_WIKI_API = "https://en.wikipedia.org/w/api.php"
+_WIKI_SUMMARY = "https://en.wikipedia.org/api/rest_v1/page/summary/"
+_WIKI_HEADERS = {"User-Agent": "Novius/3.0 (educational project)"}
+
+
+def _web_research(prompt):
+    import urllib.request
+    from urllib.parse import quote
+    q = re.sub(r"^(what|who|where|when|why|how) (is|are|was|were|do|does|did)\s+",
+               "", prompt.strip().lower()).strip(" ?.")
+    if not q:
+        return None
+    try:
+        url = _WIKI_API + ("?action=query&list=search&format=json&srlimit=1"
+                           "&srsearch=" + quote(q))
+        req = urllib.request.Request(url, headers=_WIKI_HEADERS)
+        with urllib.request.urlopen(req, timeout=8) as r:
+            hits = json.load(r).get("query", {}).get("search", [])
+        if not hits:
+            return None
+        title = hits[0]["title"]
+        req = urllib.request.Request(_WIKI_SUMMARY + quote(title, safe=""),
+                                     headers=_WIKI_HEADERS)
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.load(r)
+        text = " ".join(data.get("extract", "").split())
+        if not text:
+            return None
+        sentences = re.split(r"(?<=[.!?]) +", text)
+        short = ""
+        for s in sentences[:4]:
+            if len(short) + len(s) > 480 and short:
+                break
+            short += s + " "
+        page = data.get("content_urls", {}).get("desktop", {}).get("page", "")
+        return short.strip(), page
+    except Exception:
+        return None
+
+
 class Engine:
     def __init__(self):
         self._cache = {}
@@ -1274,7 +1322,7 @@ class Engine:
                 import time as _time
                 _time.sleep(0.02)
 
-    def chat(self, name, prompt, emit):
+    def chat(self, name, prompt, emit, research=False):
         spec = MODEL_ZOO[name]
         if not os.path.exists(weights_path(name)):
             emit({"type": "error",
@@ -1287,6 +1335,19 @@ class Engine:
             emit({"type": "status", "text": ""})
             self._stream_text(answer, emit)
             return
+        if research:
+            emit({"type": "status", "text": "Searching the web ..."})
+            found = _web_research(prompt)
+            if found is not None:
+                text, src = found
+                emit({"type": "status", "text": "Reading sources ..."})
+                emit({"type": "status", "text": ""})
+                if src:
+                    emit({"type": "source", "url": src})
+                self._stream_text(text, emit)
+                return
+            emit({"type": "status",
+                  "text": "No web results - using neural net ..."})
         emit({"type": "status", "text": f"Loading {spec['label']} ..."})
         model, tok = self.load(name)
         gen = spec["gen"]
@@ -1456,6 +1517,17 @@ PAGE = r"""<!doctype html>
           background:linear-gradient(135deg,#3b82f6,#34d399); color:#fff;
           font-size:17px; flex-shrink:0; }
   #send:disabled { background:#2a3947; }
+  #webbtn { height:38px; border-radius:19px; cursor:pointer; flex-shrink:0;
+            border:1px solid var(--line); background:transparent; color:var(--dim);
+            font-size:12.5px; padding:0 14px; display:flex; align-items:center; gap:6px;
+            font-family:inherit; transition:all .2s; }
+  #webbtn:hover { color:var(--text); border-color:rgba(96,165,250,.5); }
+  #webbtn.on { color:#fff; border-color:transparent;
+               background:linear-gradient(135deg,#3b82f6,#34d399); }
+  .srclink { display:inline-block; margin-top:8px; font-size:12px; color:#60a5fa;
+             text-decoration:none; border:1px solid rgba(96,165,250,.3);
+             padding:3px 10px; border-radius:99px; }
+  .srclink:hover { color:#34d399; border-color:rgba(52,211,153,.5); }
   .hint { text-align:center; font-size:11px; color:var(--dim); margin-top:8px; }
   .welcome { text-align:center; margin-top:11vh; }
   .welcome h1 { font-size:32px; font-weight:700;
@@ -1523,6 +1595,7 @@ PAGE = r"""<!doctype html>
     </div></div>
   </div></div>
   <div class="composer"><div class="box">
+    <button id="webbtn" title="Search the web for real answers">&#127760; Web</button>
     <textarea id="input" rows="1" placeholder="Message Novius..."></textarea>
     <button id="send" title="Send">&#8593;</button>
   </div>
@@ -1534,6 +1607,12 @@ const feed = document.getElementById('feed');
 const chat = document.getElementById('chat');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('send');
+const webbtn = document.getElementById('webbtn');
+let webMode = false;
+webbtn.onclick = () => { webMode = !webMode;
+  webbtn.classList.toggle('on', webMode);
+  input.placeholder = webMode ? 'Ask anything - Novius will search the web...' :
+                                'Message Novius...'; };
 const curModel = document.getElementById('curmodel');
 let model = 'crusta';
 let busy = false;
@@ -1591,7 +1670,7 @@ async function send() {
   let got = false;
   try {
     const resp = await fetch('/api/chat', { method:'POST',
-      body: JSON.stringify({ model, prompt: text }) });
+      body: JSON.stringify({ model, prompt: text, research: webMode }) });
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
     let buf = '';
@@ -1610,6 +1689,11 @@ async function send() {
           tbody.textContent += evt.text; }
         else if (evt.type === 'token') { got = true;
           reply.textContent += evt.text; scroll(); }
+        else if (evt.type === 'source') {
+          const a = document.createElement('a');
+          a.className = 'srclink'; a.href = evt.url; a.target = '_blank';
+          a.rel = 'noopener'; a.textContent = '\u127760 Wikipedia source';
+          row.querySelector('.content').appendChild(a); scroll(); }
         else if (evt.type === 'error') { status.textContent = evt.text; }
       }
     }
@@ -1699,7 +1783,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise GenerationCancelled()
 
         try:
-            ENGINE.chat(name, prompt, emit)
+            ENGINE.chat(name, prompt, emit, research=bool(req.get("research")))
         except GenerationCancelled:
             return
 

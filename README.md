@@ -11,6 +11,11 @@ models. There is no embedded dictionary lookup, no fact base, no canned smalltal
 tool is an exact **calculator** for arithmetic (`what is 23*7`, `sqrt 144`,
 `15% of 80`, `2^10`), which small networks cannot learn reliably.
 
+There is also an optional **Internet research** mode: click the 🌐 **Web**
+toggle in the chat box and Novius will search Wikipedia live and answer from
+real retrieved text, with a source link — handy for facts the tiny models
+never memorized. Toggle it off and replies come purely from the neural nets.
+
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## The models (V3.0)
@@ -96,6 +101,9 @@ for e in events:
   pass (see above).
 - **Calculator tool** — a small AST-whitelisted evaluator handles arithmetic
   prompts before generation; everything else goes to the neural models.
+- **Internet research tool** — optional toggle; searches the Wikipedia API
+  (stdlib `urllib`, no API key) and streams the retrieved summary with a
+  source link; falls back to the neural models when offline or no results.
 - **UI** — dependency-free local web server (stdlib `http.server`) with a
   streaming ChatGPT-style interface: black background, animated blue/green
   auroras, glassmorphism panels, suggestion chips, copy buttons, thinking
