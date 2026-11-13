@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 4,
+  "generated": [
+    {
+      "path": "apps/api/pyproject.toml",
+      "base": "4efa24b72876a8ecaeea64b4fa3ec54543d89cb546177ff87e8c7c003fdfdb87"
+    }
+  ]
+}

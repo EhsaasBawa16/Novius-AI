@@ -73,7 +73,8 @@ TOKENS_FILE = os.path.join(HERE, "corpus_tokens.npy")
 TOKCACHE_FILE = os.path.join(HERE, "corpus_tokenizer.json")
 FT_FILE = os.path.join(HERE, "finetune.txt")
 FT_TOKENS_FILE = os.path.join(HERE, "finetune_tokens.npy")
-PORT = 8763
+PORT = int(os.environ.get("PORT", "8763"))
+HOST = os.environ.get("HOST", "127.0.0.1")
 
 BASE_CONFIG = {
     "vocab_size": 2048,
@@ -1752,6 +1753,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8", PAGE.encode("utf-8"))
+        elif self.path == "/api/health/live":
+            self._send(200, "application/json", b'{"status":"ok"}')
         elif self.path == "/api/models":
             body = json.dumps(ENGINE.models()).encode("utf-8")
             self._send(200, "application/json", body)
@@ -1796,8 +1799,8 @@ class GenerationCancelled(Exception):
 
 
 def serve():
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    url = f"http://127.0.0.1:{PORT}"
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    url = f"http://{'127.0.0.1' if HOST in ('0.0.0.0', '') else HOST}:{PORT}"
     print(f"Novius is running at {url}  (Ctrl+C to stop)")
     try:
         import webbrowser
