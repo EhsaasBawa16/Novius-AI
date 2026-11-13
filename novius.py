@@ -1,13 +1,15 @@
 """
 Novius - a ChatGPT-style AI chat app in pure Python + NumPy.
 
-A local web UI (no frameworks, stdlib only) for a family of four
+A local web UI (no frameworks, stdlib only) for a family of five
 GPT-style transformer models trained from scratch on general English:
 
   Avion  V3.0 - the very fast thinker (smallest net, instant replies)
   Qlux   V3.0 - quick thinker (small net, brief thinking phase)
   Crusta V3.0 - balanced thinker (medium net, medium thinking phase)
   Hyron  V3.0 - the most powerful thinker (largest net, deepest thinking)
+  Nexon  V4.0 - the deepest thinker that codes (longest context, longest
+                thinking phase, trained on real Python source code)
 
 Training data (auto-downloaded on first train, ~400 MB total):
   WikiText-103      real English Wikipedia articles
@@ -16,6 +18,12 @@ Training data (auto-downloaded on first train, ~400 MB total):
   Webster dictionary  ~40k extra word definitions
   TinyStories       clean, grammatical simple English stories
   chat corpus       internet slang, broken grammar and everyday Q&A
+  CPython sources   real Python code (mostly for Nexon V4.0)
+
+Novius also LEARNS FROM YOU: every chat exchange is saved to memory.jsonl
+and a background learner periodically finetunes the models on what you
+talked about, so the more you chat the better it gets (run
+"python novius.py learn" to force a learning session).
 
 Novius has NO predefined answers. Every reply is generated token-by-token
 by the neural models, which are trained in two passes: a large main pass on
@@ -33,19 +41,26 @@ Files (created next to this script):
   corpus.txt            assembled training text
   corpus_tokens.npy     tokenized corpus cache
   corpus_tokenizer.json tokenizer cache
-  finetune.txt          Q&A + chat data used for the final tuning pass
+  code_corpus.txt       Python source code corpus (for Nexon)
+  code_tokens.npy       tokenized code corpus cache
+  finetune_v4.txt       Q&A + chat + code data used for the final tuning pass
+  finetune_tokens_v4.npy  tokenized finetune cache
+  memory.jsonl          everything you chat - the online-learning data
   weights_avion.txt     trained weights per model (plain-text JSON)
   weights_qlux.txt
   weights_crusta.txt
   weights_hyron.txt
+  weights_nexon.txt
 
 Usage:
   python novius.py train            train all models (several hours on CPU)
-  python novius.py train hyron      train a single model
+  python novius.py train nexon      train a single model
   python novius.py finetune         final Q&A tuning pass on all models
   python novius.py finetune hyron   tune a single model
   python novius.py                  start the Novius web UI (http://127.0.0.1:8763)
   python novius.py gen hyron "hi"   one-shot generation in the terminal
+  python novius.py learn            finetune all models on your saved chats
+  python novius.py learn nexon      finetune one model on your saved chats
 
 Requires:  pip install numpy
 """
@@ -71,8 +86,8 @@ STORIES_URL = ("https://huggingface.co/datasets/roneneldan/TinyStories/"
 CORPUS_FILE = os.path.join(HERE, "corpus.txt")
 TOKENS_FILE = os.path.join(HERE, "corpus_tokens.npy")
 TOKCACHE_FILE = os.path.join(HERE, "corpus_tokenizer.json")
-FT_FILE = os.path.join(HERE, "finetune.txt")
-FT_TOKENS_FILE = os.path.join(HERE, "finetune_tokens.npy")
+FT_FILE = os.path.join(HERE, "finetune_v4.txt")
+FT_TOKENS_FILE = os.path.join(HERE, "finetune_tokens_v4.npy")
 PORT = int(os.environ.get("PORT", "8763"))
 HOST = os.environ.get("HOST", "127.0.0.1")
 
@@ -89,7 +104,7 @@ MODEL_ZOO = {
         "config": {"d_model": 64, "n_heads": 4, "n_layers": 2, "d_ff": 256},
         "train_steps": 4000,
         "gen": {"max_new_tokens": 90, "temperature": 0.45, "top_k": 40,
-                "think_tokens": 0},
+                "think_tokens": 0, "rep": 1.12},
     },
     "qlux": {
         "label": "Qlux V3.0",
@@ -98,7 +113,7 @@ MODEL_ZOO = {
         "config": {"d_model": 128, "n_heads": 4, "n_layers": 2, "d_ff": 512},
         "train_steps": 6000,
         "gen": {"max_new_tokens": 110, "temperature": 0.4, "top_k": 50,
-                "think_tokens": 12},
+                "think_tokens": 12, "rep": 1.15},
     },
     "crusta": {
         "label": "Crusta V3.0",
@@ -107,7 +122,7 @@ MODEL_ZOO = {
         "config": {"d_model": 192, "n_heads": 6, "n_layers": 3, "d_ff": 768},
         "train_steps": 7000,
         "gen": {"max_new_tokens": 130, "temperature": 0.35, "top_k": 40,
-                "think_tokens": 24},
+                "think_tokens": 24, "rep": 1.15},
     },
     "hyron": {
         "label": "Hyron V3.0",
@@ -116,7 +131,19 @@ MODEL_ZOO = {
         "config": {"d_model": 256, "n_heads": 8, "n_layers": 6, "d_ff": 1024},
         "train_steps": 7000,
         "gen": {"max_new_tokens": 160, "temperature": 0.3, "top_k": 40,
-                "think_tokens": 48},
+                "think_tokens": 48, "rep": 1.18},
+    },
+    "nexon": {
+        "label": "Nexon V4.0",
+        "tagline": "The deepest thinker - codes, long memory",
+        "badge": "V4 · Codes",
+        "config": {"d_model": 256, "n_heads": 8, "n_layers": 8, "d_ff": 1024,
+                   "block_size": 192},
+        "train_steps": 3000,
+        "batch_size": 8,
+        "code_mix": 0.35,
+        "gen": {"max_new_tokens": 220, "temperature": 0.3, "top_k": 40,
+                "think_tokens": 96, "rep": 1.22},
     },
 }
 
@@ -126,6 +153,19 @@ WARMUP = 200
 MIN_LR_FRAC = 0.1
 CLIP = 1.0
 SEED = 42
+
+# Online learning: every chat exchange is saved to memory.jsonl and the
+# background Learner thread finetunes the models on it every LEARN_EVERY
+# new exchanges, so Novius keeps improving from real conversations.
+LEARN_FILE = os.path.join(HERE, "memory.jsonl")
+LEARN_EVERY = 6
+LEARN_STEPS = 60
+LEARN_LR = 3e-4
+LEARN_POLL = 15
+
+# Code requests get a colder, more focused sampling profile.
+_CODE_RE = re.compile(r"\b(code|coding|function|script|program|python|"
+                      r"algorithm|snippet)\b", re.I)
 
 
 def weights_path(name):
@@ -809,6 +849,192 @@ novius: fr what else is on ur mind
 """
 
 
+# Code Q&A: question -> answer pairs that teach the models to talk about
+# and write code. Answers are short and conversational, with real Python
+# inline, matching the dialogue format used at inference time.
+CODE_QA = """
+how do i reverse a list in python
+you can use slicing: mylist[::-1] gives the list backwards
+how do i sort a list in python
+use sorted(mylist) for a new list or mylist.sort() to sort in place
+how do i make a function in python
+use the def keyword like: def add(a, b): return a + b
+how do i print something in python
+use the print function: print("hello world")
+how do i read a file in python
+use a with block: with open("file.txt") as f: text = f.read()
+how do i write a file in python
+use a with block: with open("out.txt", "w") as f: f.write(text)
+how do i loop over a list in python
+use a for loop: for item in mylist: print(item)
+how do i loop a number of times in python
+use range: for i in range(10): print(i)
+what is a dictionary in python
+a dictionary stores key value pairs like: ages = {"ana": 21, "bo": 33}
+how do i add to a dictionary in python
+just assign the key: ages["cat"] = 5 adds a new entry
+how do i check if a key is in a dictionary in python
+use the in operator: if "ana" in ages: print(ages["ana"])
+how do i get the length of a list in python
+use the len function: len(mylist) returns the number of items
+how do i join two lists in python
+use the plus operator: combined = list1 + list2
+how do i copy a list in python
+use slicing: copy = mylist[:] makes a shallow copy
+how do i remove an item from a list in python
+use remove by value: mylist.remove("x") or pop by index: mylist.pop(0)
+what is a tuple in python
+a tuple is like a list but it cannot change: point = (3, 4)
+what is a set in python
+a set stores unique values: unique = set(mylist) removes duplicates
+how do i write an if statement in python
+like this: if x > 0: print("positive")
+how do i write an if else statement in python
+like this: if x > 0: print("yes") else: print("no")
+how do i write a while loop in python
+like this: while x < 10: x = x + 1
+how do i use a for loop over a dictionary in python
+loop the items: for key, value in ages.items(): print(key, value)
+how do i convert a string to a number in python
+use int("42") for whole numbers or float("3.14") for decimals
+how do i convert a number to a string in python
+use the str function: str(42) becomes "42"
+how do i split a string in python
+use split: words = "hello world".split() gives a list of words
+how do i join a list of strings in python
+use join: " ".join(words) glues them back with spaces
+how do i lowercase a string in python
+use the lower method: "HELLO".lower() gives "hello"
+how do i check if a string contains a word in python
+use the in operator: if "cat" in text: print("found it")
+what is a list comprehension in python
+a short way to build lists: squares = [x * x for x in range(10)]
+how do i filter a list in python
+use a comprehension with if: evens = [x for x in nums if x % 2 == 0]
+how do i import a module in python
+use import: import math then use math.sqrt(16)
+how do i generate a random number in python
+import random then use random.randint(1, 10) for 1 to 10
+what is a class in python
+a class is a blueprint for objects: class Dog: def bark(self): print("woof")
+what is self in python
+self is the object itself, it is the first argument of every method
+what is __init__ in python
+it is the constructor, it runs when you create an object: def __init__(self, name): self.name = name
+how do i create an object in python
+call the class like a function: my_dog = Dog() makes a new Dog
+how do i handle errors in python
+use try and except: try: risky() except Exception as e: print(e)
+how do i raise an error in python
+use raise: raise ValueError("bad input") stops with a message
+how do i write a comment in python
+start the line with a hash: # this is a comment
+what is a lambda in python
+a tiny unnamed function: double = lambda x: x * 2
+how do i swap two variables in python
+use tuple unpacking: a, b = b, a swaps them in one line
+how do i enumerate a list in python
+use enumerate: for i, item in enumerate(mylist): print(i, item)
+how do i zip two lists in python
+use zip: for a, b in zip(list1, list2): print(a, b)
+how do i find the max of a list in python
+use the max function: max(nums) gives the biggest value
+how do i sum a list of numbers in python
+use the sum function: total = sum(nums)
+how do i round a number in python
+use round: round(3.14159, 2) gives 3.14
+how do i get the square root in python
+import math then use math.sqrt(16) which gives 4.0
+how do i check the type of a variable in python
+use the type function: type(x) tells you what it is
+how do i make a list of numbers from 0 to 9 in python
+use range with list: nums = list(range(10))
+how do i count items in a list in python
+use the count method: mylist.count("x") tells you how many times x appears
+write a function that adds two numbers
+here you go: def add(a, b): return a + b
+write a function that checks if a number is even
+here you go: def is_even(n): return n % 2 == 0
+write a function that returns the biggest of three numbers
+here you go: def biggest(a, b, c): return max(a, b, c)
+write a function that counts words in a sentence
+here you go: def count_words(s): return len(s.split())
+write a function that reverses a string
+here you go: def reverse(s): return s[::-1]
+"""
+
+
+def _code_dialogue_text(repeat=1):
+    lines = [l.strip() for l in CODE_QA.strip().splitlines() if l.strip()]
+    out = []
+    for i in range(0, len(lines) - 1, 2):
+        out.append(f"user: {lines[i]}\nnovius: {lines[i + 1]}")
+    return ("\n".join(out) + "\n") * repeat
+
+
+# Real Python source code (mostly for Nexon V4.0). We stream the first
+# ~45 MB of the CPython 3.12 release tarball and keep the Lib/*.py files.
+CODE_URL = "https://github.com/python/cpython/archive/refs/tags/v3.12.4.tar.gz"
+CODE_TARBALL = os.path.join(HERE, "cpython.tar.gz")
+CODE_TEXT_FILE = os.path.join(HERE, "code_corpus.txt")
+CODE_TOKENS_FILE = os.path.join(HERE, "code_tokens.npy")
+
+
+def _code_text(cap=12_000_000):
+    if os.path.exists(CODE_TEXT_FILE):
+        with open(CODE_TEXT_FILE, "r", encoding="utf-8") as f:
+            return f.read()
+    _download(CODE_URL, CODE_TARBALL, max_bytes=45_000_000)
+    import tarfile
+    out, total = [], 0
+    try:
+        with tarfile.open(CODE_TARBALL, mode="r|gz") as tf:
+            for m in tf:
+                if total >= cap:
+                    break
+                if not m.isfile() or not m.name.endswith(".py"):
+                    continue
+                if ("/test" in m.name or "/idlelib/" in m.name
+                        or "/lib2to3/" in m.name):
+                    continue
+                fobj = tf.extractfile(m)
+                if fobj is None:
+                    continue
+                src = fobj.read().decode("utf-8", errors="ignore")
+                if len(src) < 200:
+                    continue
+                out.append(src)
+                total += len(src)
+    except Exception:
+        pass
+    text = "\n".join(out)[:cap]
+    with open(CODE_TEXT_FILE, "w", encoding="utf-8") as f:
+        f.write(text)
+    print(f"Code corpus: {len(text) / 1e6:.1f} MB of Python source")
+    return text
+
+
+def load_code_tokens():
+    if os.path.exists(CODE_TOKENS_FILE) and os.path.exists(TOKCACHE_FILE):
+        return np.load(CODE_TOKENS_FILE)
+    if not os.path.exists(TOKCACHE_FILE):
+        return None
+    tok = BPETokenizer.from_payload(
+        json.load(open(TOKCACHE_FILE, encoding="utf-8")))
+    data = tokenize_corpus(tok, _code_text())
+    np.save(CODE_TOKENS_FILE, data)
+    return data
+
+
+def _build_finetune(top_qa, rest_qa, slang, stories_head):
+    return (("\n".join(_qa_dialogue(top_qa)) + "\n") * 2
+            + ("\n".join(_qa_to_dialogue(rest_qa)) + "\n") * 1
+            + (slang + "\n") * 5
+            + (DIALOGUE_CORPUS.strip() + "\n") * 400
+            + _code_dialogue_text(40)
+            + stories_head[:400_000])
+
+
 def _download(url, out, max_bytes=None):
     if os.path.exists(out):
         return
@@ -970,16 +1196,17 @@ def ensure_corpus():
         if not os.path.exists(FT_FILE):
             _download(STORIES_URL, os.path.join(HERE, "tinystories.txt"),
                       max_bytes=35_000_000)
+            wordnet_zip = os.path.join(HERE, "wordnet.zip")
+            _download(WORDNET_URL, wordnet_zip)
+            wndir = os.path.join(HERE, "wordnet_pkg", "wordnet")
+            if not os.path.exists(wndir):
+                import zipfile
+                with zipfile.ZipFile(wordnet_zip) as zf:
+                    zf.extractall(os.path.join(HERE, "wordnet_pkg"))
             _, top_qa, rest_qa, slang, stories_head = _qa_parts(
-                os.path.join(HERE, "wordnet_pkg", "wordnet"),
-                os.path.join(HERE, "tinystories.txt"))
-            ft = (("\n".join(_qa_dialogue(top_qa)) + "\n") * 2
-                  + ("\n".join(_qa_to_dialogue(rest_qa)) + "\n") * 1
-                  + (slang + "\n") * 5
-                  + (DIALOGUE_CORPUS.strip() + "\n") * 400
-                  + stories_head[:400_000])
+                wndir, os.path.join(HERE, "tinystories.txt"))
             with open(FT_FILE, "w", encoding="utf-8") as f:
-                f.write(ft)
+                f.write(_build_finetune(top_qa, rest_qa, slang, stories_head))
         with open(CORPUS_FILE, "r", encoding="utf-8") as f:
             return f.read()
     print("Assembling training corpus (Wikipedia + WordNet + dictionary "
@@ -1022,12 +1249,9 @@ def ensure_corpus():
     parts.append(("\n".join(qa) + "\n") * 3)
     parts.append(("\n".join(top_qa + rest_qa) + "\n") * 60)
     parts.append((slang + "\n") * 100)
+    parts.append(_code_text())
 
-    ft = (("\n".join(_qa_dialogue(top_qa)) + "\n") * 2
-          + ("\n".join(_qa_to_dialogue(rest_qa)) + "\n") * 1
-          + (slang + "\n") * 5
-          + (DIALOGUE_CORPUS.strip() + "\n") * 400
-          + stories_head[:400_000])
+    ft = _build_finetune(top_qa, rest_qa, slang, stories_head)
     with open(FT_FILE, "w", encoding="utf-8") as f:
         f.write(ft)
 
@@ -1126,11 +1350,19 @@ def train_model(name):
     print(f"[{spec['label']}] corpus: {len(data):,} tokens, "
           f"vocab {len(tok.vocab)}")
 
+    code_data = None
+    if spec.get("code_mix"):
+        code_data = load_code_tokens()
+        if code_data is not None:
+            print(f"[{spec['label']}] code corpus: {len(code_data):,} tokens "
+                  f"({spec['code_mix']:.0%} of batches)")
+
     config = dict(BASE_CONFIG, **spec["config"])
     model = GPT(config)
     opt = Adam(model.p)
     rng = np.random.default_rng(SEED)
-    steps, T, B = spec["train_steps"], config["block_size"], BATCH_SIZE
+    steps, T = spec["train_steps"], config["block_size"]
+    B = spec.get("batch_size", BATCH_SIZE)
     print(f"[{spec['label']}] {sum(v.size for v in model.p.values()):,} params, "
           f"{steps} steps (batch {B}, context {T}) ...")
     for step in range(1, steps + 1):
@@ -1138,9 +1370,12 @@ def train_model(name):
         progress = max(step - WARMUP, 0) / max(steps - WARMUP, 1)
         cosine = 0.5 * (1.0 + math.cos(math.pi * min(progress, 1.0)))
         lr = LR * warm * (MIN_LR_FRAC + (1.0 - MIN_LR_FRAC) * cosine)
-        ix = rng.integers(0, len(data) - T - 1, size=B)
-        x = np.stack([data[i:i + T] for i in ix])
-        y = np.stack([data[i + 1:i + T + 1] for i in ix])
+        src = data
+        if code_data is not None and rng.random() < spec["code_mix"]:
+            src = code_data
+        ix = rng.integers(0, len(src) - T - 1, size=B)
+        x = np.stack([src[i:i + T] for i in ix])
+        y = np.stack([src[i + 1:i + T + 1] for i in ix])
         loss, grads = loss_and_grads(model, x, y)
         opt.step(model.p, grads, lr)
         if step % 200 == 0 or step == 1:
@@ -1289,10 +1524,49 @@ def _web_research(prompt):
         return None
 
 
+def _degenerate(text):
+    words = text.split()
+    if len(words) < 3 or len(text) < 15:
+        return True
+    if len(set(words)) / len(words) < 0.55:
+        return True
+    return False
+
+
+_STOPWORDS = set("the a an of to in is are was were and or it its for on with "
+                 "as at by from that this be been has have had not do does did "
+                 "you your i me my we our they he she him her them so if then "
+                 "than there here what which who whom how why when where can "
+                 "could will would should shall may might must about into over "
+                 "under out up down off no nor but while during before after "
+                 "above below very s t don now d ll m o re ve y ain aren "
+                 "couldn didn doesn hadn hasn haven isn ma mightn mustn needn "
+                 "shan shouldn wasn weren won wouldn also use used one two get".split())
+
+
+def _clean_answer(text):
+    for marker in ("\nuser:", "\nnovius:", "\nweb:", "\nuser ", "\nwhat ",
+                   "\nhow ", "\nwho ", "\nwhere ", "\nwhen ", "\nwhy "):
+        i = text.find(marker)
+        if i != -1:
+            text = text[:i]
+    return text.strip()
+
+
+def _grounded(text, source):
+    src = {w.strip(".,!?\"'()[]:;") for w in source.lower().split()} - _STOPWORDS
+    ans = [w.strip(".,!?\"'()[]:;") for w in text.lower().split()]
+    ans = [w for w in ans if w not in _STOPWORDS and len(w) > 2]
+    if not ans:
+        return False
+    return sum(1 for w in ans if w in src) / len(ans) >= 0.12
+
+
 class Engine:
     def __init__(self):
         self._cache = {}
         self._lock = threading.Lock()
+        self._active = 0
 
     def models(self):
         out = []
@@ -1323,56 +1597,137 @@ class Engine:
                 import time as _time
                 _time.sleep(0.02)
 
-    def chat(self, name, prompt, emit, research=False):
+    def busy(self):
+        return self._active > 0
+
+    def record(self, name, prompt, reply):
+        reply = (reply or "").strip()
+        prompt = (prompt or "").strip()
+        if not reply or not prompt:
+            return False
+        try:
+            with open(LEARN_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"user": prompt, "reply": reply,
+                                    "model": name}) + "\n")
+            return True
+        except Exception:
+            return False
+
+    def swap(self, name, params, tok):
+        with self._lock:
+            if name not in self._cache:
+                self._cache[name] = GPT.load(weights_path(name))
+            model = self._cache[name][0]
+            model.p = params
+        model.save(tok, weights_path(name))
+
+    def chat(self, name, prompt, emit, research=False, history=None):
         spec = MODEL_ZOO[name]
         if not os.path.exists(weights_path(name)):
             emit({"type": "error",
                   "text": f"{spec['label']} is not trained yet. "
                           f"Run:  python novius.py train {name}"})
-            return
+            return ""
+        self._active += 1
+        try:
+            return self._chat(name, prompt, emit, research, history)
+        finally:
+            self._active -= 1
+
+    def _chat(self, name, prompt, emit, research, history):
+        spec = MODEL_ZOO[name]
         answer = _try_math(prompt)
         if answer is not None:
             emit({"type": "status", "text": "Calculating ..."})
             emit({"type": "status", "text": ""})
             self._stream_text(answer, emit)
-            return
+            return answer
+
+        emit({"type": "status", "text": f"Loading {spec['label']} ..."})
+        model, tok = self.load(name)
+        gen = dict(spec["gen"])
+        if _CODE_RE.search(prompt):
+            gen["temperature"] = 0.2
+            gen["top_k"] = 20
+        block = model.config["block_size"]
+
+        turns = ""
+        for t in (history or [])[-4:]:
+            u = str(t.get("user", "")).strip().lower()[:200]
+            a = str(t.get("novius", "")).strip().lower()[:200]
+            if u and a:
+                turns += f"user: {u}\nnovius: {a}\n"
+        ctx_text = f"{turns}user: {prompt.strip().lower()}\nnovius:"
+
         if research:
             emit({"type": "status", "text": "Searching the web ..."})
             found = _web_research(prompt)
             if found is not None:
                 text, src = found
-                emit({"type": "status", "text": "Reading sources ..."})
-                emit({"type": "status", "text": ""})
                 if src:
                     emit({"type": "source", "url": src})
+                emit({"type": "status",
+                      "text": f"{spec['label']} is reading the source ..."})
+                web_ctx = f"web: {text[:700]}\n{ctx_text}"
+                if gen["think_tokens"] > 0:
+                    thoughts = self._generate(
+                        model, tok, web_ctx + " ", block,
+                        gen["think_tokens"], gen["temperature"] + 0.15,
+                        max(gen["top_k"], 60), None, gen["rep"])
+                    if thoughts.strip():
+                        emit({"type": "think", "text": thoughts})
+                emit({"type": "status", "text": ""})
+                answer = _clean_answer(self._generate(
+                    model, tok, web_ctx, block, gen["max_new_tokens"],
+                    gen["temperature"], gen["top_k"], None,
+                    gen["rep"]))
+                if not _degenerate(answer) and _grounded(answer, text):
+                    self._stream_text(answer, emit)
+                    if self.record(name, prompt, answer):
+                        emit({"type": "learned"})
+                    return answer
+                lead = _clean_answer(self._generate(
+                    model, tok, ctx_text, block, 20, 0.5, 40, None,
+                    gen["rep"]))
+                if _degenerate(lead) or not _grounded(lead, prompt + " " + text):
+                    lead = ""
+                if lead:
+                    self._stream_text(lead + " ", emit)
                 self._stream_text(text, emit)
-                return
+                reply = (lead + " " + text).strip()
+                if self.record(name, prompt, reply):
+                    emit({"type": "learned"})
+                return reply
             emit({"type": "status",
                   "text": "No web results - using neural net ..."})
-        emit({"type": "status", "text": f"Loading {spec['label']} ..."})
-        model, tok = self.load(name)
-        gen = spec["gen"]
-        block = model.config["block_size"]
-        ctx_text = f"user: {prompt.strip().lower()}\nnovius:"
 
-        thoughts = ""
         if gen["think_tokens"] > 0:
             emit({"type": "status", "text": f"{spec['label']} is thinking ..."})
             thoughts = self._generate(model, tok, ctx_text + " ", block,
                                       gen["think_tokens"],
                                       gen["temperature"] + 0.15,
-                                      max(gen["top_k"], 60), None)
+                                      max(gen["top_k"], 60), None, gen["rep"])
             if thoughts.strip():
                 emit({"type": "think", "text": thoughts})
 
         emit({"type": "status", "text": ""})
-        self._stream(model, tok, ctx_text, block, gen, emit)
+        reply = self._stream(model, tok, ctx_text, block, gen, emit)
+        if self.record(name, prompt, reply):
+            emit({"type": "learned"})
+        return reply
 
-    def _run(self, model, tok, context, temperature, top_k, rng):
+    def _run(self, model, tok, context, temperature, top_k, rng,
+             recent=None, rep=1.0):
         ids = tok.encode(context)[-model.config["block_size"]:] or [0]
         ctx = np.array(ids)[None, :]
         logits, _ = model.forward(ctx)
         logits = logits[-1] / max(temperature, 1e-3)
+        if rep > 1.0 and recent:
+            for t in {int(i) for i in recent[-48:]}:
+                if logits[t] > 0:
+                    logits[t] /= rep
+                else:
+                    logits[t] *= rep
         probs = softmax(logits)
         if top_k and top_k < len(probs):
             keep = np.argpartition(probs, -top_k)[-top_k:]
@@ -1382,13 +1737,13 @@ class Engine:
         return ids, int(rng.choice(len(probs), p=probs))
 
     def _generate(self, model, tok, context, block, max_new, temperature,
-                  top_k, seed):
+                  top_k, seed, rep=1.0):
         rng = np.random.default_rng(seed)
         ids = tok.encode(context)[-block:] or [0]
         out = list(ids)
         for _ in range(max_new):
             _, nxt = self._run(model, tok, tok.decode(out[-block:]),
-                               temperature, top_k, rng)
+                               temperature, top_k, rng, recent=out, rep=rep)
             out.append(nxt)
         return tok.decode(out[len(ids):])
 
@@ -1399,7 +1754,8 @@ class Engine:
         n_prompt = len(ids)
         for _ in range(gen["max_new_tokens"]):
             _, nxt = self._run(model, tok, tok.decode(out[-block:]),
-                               gen["temperature"], gen["top_k"], rng)
+                               gen["temperature"], gen["top_k"], rng,
+                               recent=out, rep=gen.get("rep", 1.0))
             out.append(nxt)
             raw = tok.decode(out[n_prompt:])
             if raw.strip() and (raw.endswith("\n")
@@ -1409,9 +1765,92 @@ class Engine:
             piece = tok.decode([nxt])
             if piece:
                 emit({"type": "token", "text": piece})
+        return tok.decode(out[n_prompt:])
 
 
 ENGINE = Engine()
+
+
+# --------------------------------------------------------------------------
+# Online learning - Novius finetunes itself on what you talk about
+# --------------------------------------------------------------------------
+
+class Learner(threading.Thread):
+    """Watches memory.jsonl and periodically finetunes the models on the
+    latest conversations (mixed with the built-in dialogue data so the
+    models do not drift). Trains on a copy of the weights, then hot-swaps
+    the serving model and saves the updated weights file."""
+
+    def __init__(self, engine):
+        super().__init__(daemon=True)
+        self.engine = engine
+        self._seen = 0
+        self._stop = threading.Event()
+
+    def stop(self):
+        self._stop.set()
+
+    def _pairs(self):
+        pairs = []
+        if not os.path.exists(LEARN_FILE):
+            return pairs
+        with open(LEARN_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except Exception:
+                    continue
+                u = str(d.get("user", "")).strip()
+                a = str(d.get("reply", "")).strip()
+                if u and a:
+                    pairs.append((u[:400], a[:400]))
+        return pairs
+
+    def _count(self):
+        return len(self._pairs())
+
+    def learn_now(self, name, steps=LEARN_STEPS):
+        pairs = self._pairs()[-400:]
+        if not pairs:
+            return False
+        model, tok = self.engine.load(name)
+        T = model.config["block_size"]
+        text = "".join(f"user: {u}\nnovius: {a}\n" for u, a in pairs)
+        text += DIALOGUE_CORPUS.strip()[:20000]
+        ids = tok.encode(text)
+        if len(ids) < T + 2:
+            return False
+        data = np.array(ids, dtype=np.int32)
+        tmp = GPT(model.config, seed=SEED)
+        tmp.p = {k: v.copy() for k, v in model.p.items()}
+        opt = Adam(tmp.p)
+        rng = np.random.default_rng()
+        B = min(BATCH_SIZE, 8)
+        for step in range(1, steps + 1):
+            ix = rng.integers(0, len(data) - T - 1, size=B)
+            x = np.stack([data[i:i + T] for i in ix])
+            y = np.stack([data[i + 1:i + T + 1] for i in ix])
+            loss, grads = loss_and_grads(tmp, x, y)
+            opt.step(tmp.p, grads, LEARN_LR)
+            if step % 20 == 0:
+                print(f"[{MODEL_ZOO[name]['label']}] learning from your "
+                      f"chats: step {step}/{steps}  loss {loss:.4f}")
+        self.engine.swap(name, tmp.p, tok)
+        print(f"[{MODEL_ZOO[name]['label']}] learned from {len(pairs)} saved "
+              f"exchanges - weights updated")
+        return True
+
+    def run(self):
+        while not self._stop.wait(LEARN_POLL):
+            try:
+                n = self._count()
+                if n - self._seen >= LEARN_EVERY and not self.engine.busy():
+                    self._seen = n
+                    for name in MODEL_ZOO:
+                        if os.path.exists(weights_path(name)):
+                            self.learn_now(name)
+            except Exception as exc:
+                print(f"[learner] error: {exc}")
 
 
 # --------------------------------------------------------------------------
@@ -1559,6 +1998,8 @@ PAGE = r"""<!doctype html>
   .box:focus-within { border-color:rgba(52,211,153,.45);
                       box-shadow:0 0 24px rgba(52,211,153,.12); }
   .params { font-size:10px; color:var(--dim); }
+  .learnnote { display:block; font-size:11px; color:var(--dim); margin-top:6px;
+               font-style:italic; }
   @media (max-width:760px) {
     aside { position:fixed; left:-280px; transition:left .2s; height:100vh; }
     aside.open { left:0; }
@@ -1576,21 +2017,22 @@ PAGE = r"""<!doctype html>
   <button class="newchat" id="newchat">+ New chat</button>
   <div class="mtitle">Models</div>
   <div class="models" id="models"></div>
-  <div class="foot">Novius runs four transformer models trained from scratch
-    in NumPy. Every word is generated live - nothing is scripted.</div>
+  <div class="foot">Novius runs five transformer models trained from scratch
+    in NumPy. Every word is generated live - nothing is scripted - and
+    Novius learns from your chats as you talk.</div>
 </aside>
 <main>
   <header><button class="burger" id="burger">&#9776;</button>Chatting with
     <b id="curmodel">Crusta V3.0</b></header>
   <div id="chat"><div class="inner" id="feed">
     <div class="welcome"><h1>Welcome to Novi<span>us</span></h1>
-    <div class="ver">V3.0 &middot; four models &middot; trained from scratch</div>
+    <div class="ver">V4.0 &middot; five models &middot; learns from your chats</div>
     <p>Pick a model on the left, then say anything.</p>
     <div class="chips">
       <button class="chip">What is love?</button>
       <button class="chip">what is 23*7</button>
       <button class="chip">what is a black hole?</button>
-      <button class="chip">tell me about the sun</button>
+      <button class="chip">write a python function that reverses a list</button>
       <button class="chip">wsp bro</button>
       <button class="chip">sqrt 144</button>
     </div></div>
@@ -1617,6 +2059,7 @@ webbtn.onclick = () => { webMode = !webMode;
 const curModel = document.getElementById('curmodel');
 let model = 'crusta';
 let busy = false;
+let turns = [];
 
 async function loadModels() {
   const models = await (await fetch('/api/models')).json();
@@ -1671,7 +2114,8 @@ async function send() {
   let got = false;
   try {
     const resp = await fetch('/api/chat', { method:'POST',
-      body: JSON.stringify({ model, prompt: text, research: webMode }) });
+      body: JSON.stringify({ model, prompt: text, research: webMode,
+                             history: turns.slice(-6) }) });
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
     let buf = '';
@@ -1695,12 +2139,18 @@ async function send() {
           a.className = 'srclink'; a.href = evt.url; a.target = '_blank';
           a.rel = 'noopener'; a.textContent = '\u127760 Wikipedia source';
           row.querySelector('.content').appendChild(a); scroll(); }
+        else if (evt.type === 'learned') {
+          const n = document.createElement('span');
+          n.className = 'learnnote';
+          n.textContent = '\u2726 learned from this chat';
+          row.querySelector('.content').appendChild(n); }
         else if (evt.type === 'error') { status.textContent = evt.text; }
       }
     }
   } catch (e) { status.textContent = 'Connection error: ' + e; }
   row.querySelector('.cursor').remove();
   if (got) {
+    turns.push({ user: text, novius: reply.textContent });
     const cp = document.createElement('button');
     cp.className = 'copy'; cp.textContent = 'Copy';
     cp.onclick = () => { navigator.clipboard.writeText(reply.textContent);
@@ -1721,6 +2171,7 @@ input.addEventListener('input', () => {
   input.style.height = Math.min(input.scrollHeight, 140) + 'px';
 });
 document.getElementById('newchat').onclick = () => {
+  turns = [];
   feed.innerHTML = `<div class="welcome"><h1>Welcome to Novi<span>us</span></h1>
     <p>Pick a model on the left, then say anything.</p></div>`;
 };
@@ -1769,6 +2220,9 @@ class Handler(BaseHTTPRequestHandler):
         req = json.loads(self.rfile.read(length) or b"{}")
         name = req.get("model", "crusta")
         prompt = str(req.get("prompt", "")).strip()
+        history = req.get("history")
+        if not isinstance(history, list):
+            history = []
         if name not in MODEL_ZOO or not prompt:
             self._send(400, "application/json",
                        json.dumps({"type": "error", "text": "bad request"}).encode())
@@ -1786,7 +2240,9 @@ class Handler(BaseHTTPRequestHandler):
                 raise GenerationCancelled()
 
         try:
-            ENGINE.chat(name, prompt, emit, research=bool(req.get("research")))
+            ENGINE.chat(name, prompt, emit,
+                        research=bool(req.get("research")),
+                        history=history)
         except GenerationCancelled:
             return
 
@@ -1802,6 +2258,7 @@ def serve():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     url = f"http://{'127.0.0.1' if HOST in ('0.0.0.0', '') else HOST}:{PORT}"
     print(f"Novius is running at {url}  (Ctrl+C to stop)")
+    Learner(ENGINE).start()
     try:
         import webbrowser
         webbrowser.open(url)
@@ -1822,6 +2279,18 @@ def main():
         names = sys.argv[2:] or list(MODEL_ZOO)
         for n in names:
             finetune_model(n)
+    elif cmd == "learn":
+        names = sys.argv[2:] or list(MODEL_ZOO)
+        learner = Learner(ENGINE)
+        for n in names:
+            if n not in MODEL_ZOO:
+                print(f"Unknown model '{n}'. Choose from: {', '.join(MODEL_ZOO)}")
+                return
+        for n in names:
+            if os.path.exists(weights_path(n)):
+                learner.learn_now(n, steps=300)
+            else:
+                print(f"[{MODEL_ZOO[n]['label']}] not trained yet, skipping.")
     elif cmd == "gen":
         name = sys.argv[2] if len(sys.argv) > 2 else "crusta"
         prompt = sys.argv[3] if len(sys.argv) > 3 else ""

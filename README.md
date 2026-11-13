@@ -12,25 +12,33 @@ tool is an exact **calculator** for arithmetic (`what is 23*7`, `sqrt 144`,
 `15% of 80`, `2^10`), which small networks cannot learn reliably.
 
 There is also an optional **Internet research** mode: click the 🌐 **Web**
-toggle in the chat box and Novius will search Wikipedia live and answer from
-real retrieved text, with a source link — handy for facts the tiny models
-never memorized. Toggle it off and replies come purely from the neural nets.
+toggle in the chat box and Novius will search Wikipedia live, then *talk*
+an answer from the real retrieved text (with a source link) instead of just
+dumping the research at you. Toggle it off and replies come purely from the
+neural nets.
+
+**Novius learns from you.** Every chat exchange is saved to `memory.jsonl`
+and a background learner periodically finetunes the models on what you
+talked about — the more you chat, the better it gets. You'll see a small
+"✦ learned from this chat" note when an exchange is added to its memory.
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
-## The models (V3.0)
+## The models
 
-| Model | Params | Architecture | Thinking phase |
-|---|---|---|---|
-| **Avion V3.0** — the very fast thinker | 234k | 2 layers × 64, 4 heads | none (instant) |
-| **Qlux V3.0** — quick thinker | 664k | 2 layers × 128, 4 heads | 12 thought tokens |
-| **Crusta V3.0** — balanced thinker | 1.7M | 3 layers × 192, 6 heads | 24 thought tokens |
-| **Hyron V3.0** — the most powerful thinker | 5.3M | 6 layers × 256, 8 heads | 48 thought tokens |
+| Model | Params | Architecture | Context | Thinking phase |
+|---|---|---|---|---|
+| **Avion V3.0** — the very fast thinker | 234k | 2 layers × 64, 4 heads | 64 tok | none (instant) |
+| **Qlux V3.0** — quick thinker | 664k | 2 layers × 128, 4 heads | 64 tok | 12 thought tokens |
+| **Crusta V3.0** — balanced thinker | 1.7M | 3 layers × 192, 6 heads | 64 tok | 24 thought tokens |
+| **Hyron V3.0** — the most powerful thinker | 5.3M | 6 layers × 256, 8 heads | 64 tok | 48 thought tokens |
+| **Nexon V4.0** — the deepest thinker, codes | 6.9M | 8 layers × 256, 8 heads | 192 tok | 96 thought tokens |
 
 The "thinking" is real: heavier models first generate thought tokens at a higher
 temperature (shown in a collapsible *Thought process* panel), then generate their
-answer. Thoughts are display-only — they are never fed back into the answer
-context, which keeps answers clean.
+answer. Nexon V4.0 thinks for twice as long as Hyron before answering. Thoughts
+are display-only — they are never fed back into the answer context, which keeps
+answers clean.
 
 ## What it learned
 
@@ -43,6 +51,10 @@ Training data (auto-downloaded on first training, ~400 MB total):
 - **TinyStories** — clean, grammatical simple English
 - **Chat corpus** — internet slang, broken grammar (`we was late lol`,
   `should of known better`) and everyday Q&A
+- **CPython source code** — real Python modules, so Nexon V4.0 can talk
+  about and write code (35% of its training batches)
+- **Code Q&A** — ~50 question → answer pairs like `how do i reverse a list
+  in python` → `you can use slicing: mylist[::-1]`
 
 Training is a **two-pass** process:
 
@@ -62,16 +74,21 @@ pip install numpy
 
 Pre-trained weights are included in this repo (`weights_*.txt`). To train any
 model from scratch yourself, delete its weights file and run the train command
-below (~30 min for Avion up to a few hours for Hyron on a typical CPU).
+below (~30 min for Avion up to a few hours for Hyron on a typical CPU; Nexon
+V4.0 is the biggest and takes the longest — it also downloads and reads real
+Python source code). If you trained before V4.0, delete `corpus.txt` once so
+the code data is added to the main corpus.
 
 ## Usage
 
 ```bash
 python novius.py                    # start the web UI at http://127.0.0.1:8763
 python novius.py train              # (re)train all models
-python novius.py train hyron        # (re)train one model
+python novius.py train nexon        # (re)train one model
 python novius.py finetune           # re-run the Q&A tuning pass
 python novius.py gen hyron "hi"     # one-shot generation in the terminal
+python novius.py learn              # finetune all models on your saved chats
+python novius.py learn nexon        # finetune one model on your saved chats
 ```
 
 Or use the engine from Python:
@@ -98,12 +115,23 @@ for e in events:
   All forward/backward math is hand-written NumPy, verified against finite
   differences.
 - **Training** — main pass over the full corpus, then a dialogue-format finetune
-  pass (see above).
+  pass (see above). Nexon V4.0 additionally trains on the code corpus for 35%
+  of its batches and uses a 4× longer context (192 tokens) so it can follow
+  whole conversations and write longer code.
 - **Calculator tool** — a small AST-whitelisted evaluator handles arithmetic
   prompts before generation; everything else goes to the neural models.
 - **Internet research tool** — optional toggle; searches the Wikipedia API
-  (stdlib `urllib`, no API key) and streams the retrieved summary with a
-  source link; falls back to the neural models when offline or no results.
+  (stdlib `urllib`, no API key), then the model *reads* the retrieved text
+  and talks an answer from it, with a source link. If the grounded answer
+  comes out garbled (tiny models!), it falls back to a short neural
+  lead-in plus the retrieved facts. Falls back to the neural models when
+  offline or no results.
+- **Online learning** — every exchange is saved to `memory.jsonl`; a
+  background learner finetunes the models on the latest ~400 exchanges
+  (mixed with built-in dialogue data to prevent drift) every 6 new chats,
+  hot-swaps the serving weights, and saves the updated weights file. Ask a
+  code question and the model also switches to a colder, more focused
+  sampling profile.
 - **UI** — dependency-free local web server (stdlib `http.server`) with a
   streaming ChatGPT-style interface: black background, animated blue/green
   auroras, glassmorphism panels, suggestion chips, copy buttons, thinking
