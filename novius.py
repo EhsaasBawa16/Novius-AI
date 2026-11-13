@@ -24,6 +24,14 @@ and a background learner periodically finetunes the models on what you
 talked about, so the more you chat the better it gets (run
 "python novius.py learn" to force a learning session).
 
+Sign-in is required: the app opens on a sign-in / sign-up page (email +
+password, or Google / Facebook). Accounts and every named chat are stored
+locally in JSON files next to this script; the sidebar keeps your named
+chats with a live search. Google / Facebook sign-in uses standard OAuth2
+and is enabled by setting the GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+FACEBOOK_CLIENT_ID and FACEBOOK_CLIENT_SECRET environment variables
+(redirect URI: http://127.0.0.1:8763/oauth/callback/<provider>).
+
 Novius has NO predefined answers. Every reply is generated token-by-token
 by the neural models, which are trained in two passes: a large main pass on
 general English (wiki + stories + dictionary Q&A + slang), then a finetune
@@ -44,6 +52,9 @@ Files (created next to this script):
   finetune_v4.txt       Q&A + chat + code data used for the final tuning pass
   finetune_tokens_v4.npy  tokenized finetune cache
   memory.jsonl          everything you chat - the online-learning data
+  users.json            local accounts (email sign-up, OAuth identities)
+  sessions.json         active sign-in sessions
+  chats.json            your named chats, per account
   weights_avion.txt     trained weights per model (plain-text JSON)
   weights_qlux.txt
   weights_crusta.txt
@@ -62,12 +73,17 @@ Usage:
 Requires:  pip install numpy
 """
 
+import base64
+import hashlib
 import json
 import math
 import os
 import re
+import secrets
 import sys
 import threading
+import time
+import urllib.parse
 from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -1816,9 +1832,437 @@ class Learner(threading.Thread):
 
 
 # --------------------------------------------------------------------------
-# Web UI
+# Web UI - accounts, saved chats, aurora theme
 # --------------------------------------------------------------------------
 
+USERS_FILE = os.path.join(HERE, "users.json")
+CHATS_FILE = os.path.join(HERE, "chats.json")
+SESSIONS_FILE = os.path.join(HERE, "sessions.json")
+STORE_LOCK = threading.RLock()
+OAUTH_LOCK = threading.Lock()
+OAUTH_STATES = {}
+
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+FACEBOOK_CLIENT_ID = os.environ.get("FACEBOOK_CLIENT_ID", "")
+FACEBOOK_CLIENT_SECRET = os.environ.get("FACEBOOK_CLIENT_SECRET", "")
+
+_GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
+_FB_AUTH = "https://www.facebook.com/v19.0/dialog/oauth"
+_FB_TOKEN = "https://graph.facebook.com/v19.0/oauth/access_token"
+_FB_GRAPH = "https://graph.facebook.com/v19.0"
+_SESSION_COOKIE = "novius_session"
+
+
+def _load_json(path, default):
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return default
+
+
+def _save_json(path, data):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    os.replace(tmp, path)
+
+
+def _hash_password(password, salt=None):
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),
+                                 bytes.fromhex(salt), 120_000).hex()
+    return salt, digest
+
+
+def _valid_email(email):
+    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email or ""))
+
+
+def create_account(name, email, password, provider="email"):
+    with STORE_LOCK:
+        users = _load_json(USERS_FILE, {})
+        key = (email or "").lower()
+        if key in users:
+            return None, "An account with this email already exists - sign in instead."
+        if provider == "email":
+            if len(password or "") < 6:
+                return None, "Password must be at least 6 characters."
+            salt, digest = _hash_password(password)
+            users[key] = {"name": (name or key.split("@")[0]).strip(),
+                          "salt": salt, "hash": digest}
+        else:
+            users[key] = {"name": (name or key.split("@")[0]).strip(),
+                          "provider": provider}
+        _save_json(USERS_FILE, users)
+        return users[key], ""
+
+
+def verify_account(email, password):
+    with STORE_LOCK:
+        user = _load_json(USERS_FILE, {}).get((email or "").lower())
+    if not user or "hash" not in user:
+        return None
+    _, digest = _hash_password(password or "", user.get("salt"))
+    if secrets.compare_digest(digest, user.get("hash", "")):
+        return user
+    return None
+
+
+def user_name(email):
+    users = _load_json(USERS_FILE, {})
+    return (users.get(email) or {}).get("name", email)
+
+
+def new_session(email):
+    token = secrets.token_hex(32)
+    with STORE_LOCK:
+        sessions = _load_json(SESSIONS_FILE, {})
+        sessions[token] = {"email": email.lower(), "ts": time.time()}
+        _save_json(SESSIONS_FILE, sessions)
+    return token
+
+
+def session_email(token):
+    if not token:
+        return None
+    with STORE_LOCK:
+        entry = _load_json(SESSIONS_FILE, {}).get(token)
+    if entry and time.time() - entry.get("ts", 0) < 30 * 24 * 3600:
+        return entry["email"]
+    return None
+
+
+def drop_session(token):
+    with STORE_LOCK:
+        sessions = _load_json(SESSIONS_FILE, {})
+        if token in sessions:
+            del sessions[token]
+            _save_json(SESSIONS_FILE, sessions)
+
+
+def oauth_configured():
+    return {"google": bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
+            "facebook": bool(FACEBOOK_CLIENT_ID and FACEBOOK_CLIENT_SECRET)}
+
+
+def _oauth_redirect_uri():
+    return os.environ.get("NOVIUS_BASE_URL", f"http://127.0.0.1:{PORT}")
+
+
+def _google_profile(code, redirect_uri):
+    data = urllib.parse.urlencode({
+        "code": code, "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "redirect_uri": redirect_uri,
+        "grant_type": "authorization_code"}).encode("utf-8")
+    req = urllib.request.Request(
+        _GOOGLE_TOKEN, data=data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        tok = json.load(r)
+    parts = tok.get("id_token", "").split(".")
+    if len(parts) < 2:
+        raise ValueError("no id_token in Google response")
+    padded = parts[1] + "=" * (-len(parts[1]) % 4)
+    claims = json.loads(base64.urlsafe_b64decode(padded))
+    return claims.get("email"), claims.get("name", "")
+
+
+def _facebook_profile(code, redirect_uri):
+    q = urllib.parse.urlencode({
+        "code": code, "client_id": FACEBOOK_CLIENT_ID,
+        "client_secret": FACEBOOK_CLIENT_SECRET,
+        "redirect_uri": redirect_uri})
+    with urllib.request.urlopen(f"{_FB_TOKEN}?{q}", timeout=15) as r:
+        tok = json.load(r)
+    me_q = urllib.parse.urlencode({
+        "fields": "id,name,email", "access_token": tok.get("access_token", "")})
+    with urllib.request.urlopen(f"{_FB_GRAPH}/me?{me_q}", timeout=15) as r:
+        me = json.load(r)
+    return me.get("email"), me.get("name", "")
+
+
+def _load_user_chats(email):
+    with STORE_LOCK:
+        return _load_json(CHATS_FILE, {}).get(email, [])
+
+
+def _save_user_chats(email, chats):
+    with STORE_LOCK:
+        all_chats = _load_json(CHATS_FILE, {})
+        all_chats[email] = chats
+        _save_json(CHATS_FILE, all_chats)
+
+
+def create_chat(email, title, first_message=None):
+    with STORE_LOCK:
+        chats = _load_user_chats(email)
+        chat = {"id": secrets.token_hex(8), "title": (title or "New chat")[:60],
+                "created": time.time(), "updated": time.time(), "messages": []}
+        if first_message:
+            chat["messages"].append({"role": "user", "text": first_message})
+        chats.append(chat)
+        _save_user_chats(email, chats)
+        return chat
+
+
+def get_chat(email, chat_id):
+    if not email or not chat_id:
+        return None
+    with STORE_LOCK:
+        for chat in _load_user_chats(email):
+            if chat.get("id") == chat_id:
+                return chat
+    return None
+
+
+def _update_chat(email, chat_id, fn):
+    with STORE_LOCK:
+        chats = _load_user_chats(email)
+        for chat in chats:
+            if chat["id"] == chat_id:
+                fn(chat)
+                chat["updated"] = time.time()
+                _save_user_chats(email, chats)
+                return True
+    return False
+
+
+def append_message(email, chat_id, role, text):
+    return _update_chat(email, chat_id,
+                        lambda c: c["messages"].append({"role": role, "text": text}))
+
+
+def rename_chat(email, chat_id, title):
+    return _update_chat(email, chat_id, lambda c: c.update(title=title[:60]))
+
+
+def delete_chat(email, chat_id):
+    with STORE_LOCK:
+        chats = _load_user_chats(email)
+        remaining = [c for c in chats if c["id"] != chat_id]
+        if len(remaining) == len(chats):
+            return False
+        _save_user_chats(email, remaining)
+        return True
+
+
+def list_chats(email, query=""):
+    with STORE_LOCK:
+        chats = sorted(_load_json(CHATS_FILE, {}).get(email, []),
+                       key=lambda c: -c.get("updated", 0))
+    q = (query or "").strip().lower()
+    out = []
+    for chat in chats:
+        messages = chat.get("messages", [])
+        preview = next((m["text"] for m in messages if m["role"] == "user"), "")
+        haystack = chat["title"].lower() + " " + " ".join(
+            m["text"].lower() for m in messages)
+        if q and q not in haystack:
+            continue
+        out.append({"id": chat["id"], "title": chat["title"],
+                    "preview": preview[:80], "updated": chat.get("updated", 0)})
+    return out
+
+
+def chat_history(messages, limit=4):
+    turns, pending = [], None
+    for m in messages:
+        if m["role"] == "user":
+            pending = m["text"]
+        elif m["role"] == "novius" and pending:
+            turns.append({"user": pending, "novius": m["text"]})
+            pending = None
+    return turns[-limit:]
+AURORA_BLOBS = ('<div class="aurora"><i class="a1"></i><i class="a2"></i>'
+                '<i class="a3"></i><i class="a4"></i><i class="a5"></i>'
+                '<i class="a6"></i><i class="a7"></i></div>')
+
+AURORA_CSS = """
+  .aurora { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+  .aurora i { position:absolute; border-radius:50%; filter:blur(90px); }
+  .a1 { width:55vw; height:55vw; top:-18vw; left:-12vw;
+        background:radial-gradient(circle, rgba(37,99,235,.6), transparent 65%);
+        animation:drift1 24s ease-in-out infinite alternate; }
+  .a2 { width:45vw; height:45vw; top:-12vw; right:-10vw;
+        background:radial-gradient(circle, rgba(16,185,129,.5), transparent 65%);
+        animation:drift2 30s ease-in-out infinite alternate; }
+  .a3 { width:50vw; height:50vw; bottom:-20vw; left:18vw;
+        background:radial-gradient(circle, rgba(45,212,191,.42), transparent 65%);
+        animation:drift3 27s ease-in-out infinite alternate; }
+  .a4 { width:35vw; height:35vw; bottom:-8vw; right:6vw;
+        background:radial-gradient(circle, rgba(59,130,246,.4), transparent 65%);
+        animation:drift4 33s ease-in-out infinite alternate; }
+  .a5 { width:30vw; height:30vw; top:30vh; left:38vw;
+        background:radial-gradient(circle, rgba(52,211,153,.28), transparent 65%);
+        animation:drift2 21s ease-in-out infinite alternate-reverse; }
+  .a6 { width:26vw; height:26vw; top:6vh; left:30vw;
+        background:radial-gradient(circle, rgba(96,165,250,.3), transparent 65%);
+        animation:drift1 19s ease-in-out infinite alternate-reverse; }
+  .a7 { width:40vw; height:40vw; top:40vh; right:-14vw;
+        background:radial-gradient(circle, rgba(20,184,166,.3), transparent 65%);
+        animation:drift3 36s ease-in-out infinite alternate; }
+  .aurora::after { content:""; position:absolute; inset:0;
+        background:linear-gradient(120deg, rgba(59,130,246,.12),
+                   rgba(52,211,153,.12), rgba(45,212,191,.12));
+        background-size:300% 300%; animation:aurshift 18s ease infinite; }
+  @keyframes drift1 { to { transform:translate(9vw,7vh) scale(1.18); } }
+  @keyframes drift2 { to { transform:translate(-7vw,9vh) scale(1.22); } }
+  @keyframes drift3 { to { transform:translate(6vw,-8vh) scale(1.15); } }
+  @keyframes drift4 { to { transform:translate(-8vw,-6vh) scale(1.2); } }
+  @keyframes aurshift { 0%,100% { background-position:0% 50%; }
+                        50% { background-position:100% 50%; } }
+"""
+
+BASE_CSS = """
+  :root { --text:#e8f1f5; --dim:#8fa8b8; --blue:#3b82f6; --green:#34d399;
+          --line:rgba(125,180,220,.14); --panel:rgba(10,16,24,.55); }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Segoe UI',system-ui,sans-serif; background:#010409;
+         color:var(--text); height:100vh; display:flex; overflow:hidden; }
+  ::-webkit-scrollbar { width:8px; }
+  ::-webkit-scrollbar-thumb { background:rgba(90,150,190,.25); border-radius:8px; }
+"""
+LOGIN_PAGE = r"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in - Novius</title>
+<style>
+""" + BASE_CSS + AURORA_CSS + """
+  .authwrap { position:relative; z-index:1; margin:auto; width:100%;
+              display:flex; justify-content:center; padding:20px; }
+  .authcard { width:400px; max-width:100%; background:rgba(6,12,20,.72);
+              backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+              border:1px solid var(--line); border-radius:22px; padding:30px 28px;
+              box-shadow:0 0 60px rgba(37,99,235,.18), 0 0 90px rgba(16,185,129,.10); }
+  .logo { font-size:26px; font-weight:700; text-align:center; letter-spacing:.4px;
+          background:linear-gradient(90deg,#60a5fa,#34d399);
+          -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .ver { text-align:center; font-size:11px; letter-spacing:2px; text-transform:uppercase;
+         color:var(--dim); margin:8px 0 20px; }
+  .tabs { display:flex; gap:6px; background:rgba(10,18,28,.6); padding:4px;
+          border-radius:12px; border:1px solid var(--line); margin-bottom:18px; }
+  .tab { flex:1; border:none; background:transparent; color:var(--dim); padding:9px;
+         border-radius:9px; cursor:pointer; font:inherit; font-size:14px; }
+  .tab.sel { background:linear-gradient(135deg,rgba(59,130,246,.25),rgba(52,211,153,.2));
+             color:var(--text); }
+  input { width:100%; background:rgba(8,14,22,.7); border:1px solid var(--line);
+          color:var(--text); border-radius:10px; padding:11px 13px; font:inherit;
+          font-size:14px; outline:none; margin-bottom:10px; }
+  input:focus { border-color:rgba(52,211,153,.5); }
+  .primary { width:100%; border:none; border-radius:10px; padding:12px; cursor:pointer;
+             color:#fff; font:inherit; font-size:15px; font-weight:600;
+             background:linear-gradient(135deg,#3b82f6,#34d399); margin-top:4px; }
+  .primary:hover { filter:brightness(1.1); }
+  .or { display:flex; align-items:center; gap:10px; color:var(--dim); font-size:12px;
+        margin:16px 0 10px; }
+  .or::before, .or::after { content:""; flex:1; height:1px; background:var(--line); }
+  .oauth { display:flex; gap:10px; }
+  .obtn { flex:1; display:flex; align-items:center; justify-content:center; gap:8px;
+          background:rgba(8,14,22,.7); border:1px solid var(--line); color:var(--text);
+          border-radius:10px; padding:10px; cursor:pointer; font:inherit; font-size:13.5px; }
+  .obtn:hover { border-color:rgba(96,165,250,.5); }
+  .obtn:disabled { opacity:.45; cursor:not-allowed; }
+  .obtn .gi { color:#60a5fa; font-weight:700; }
+  .obtn .fi { color:#34d399; font-weight:700; }
+  .autherr { color:#f87171; font-size:13px; min-height:18px; margin-top:12px;
+             text-align:center; }
+  .note { color:var(--dim); font-size:11.5px; text-align:center; margin-top:10px;
+          line-height:1.5; }
+</style>
+</head>
+<body>
+""" + AURORA_BLOBS + """
+<div class="authwrap"><div class="authcard">
+  <div class="logo">Novi<span>us</span></div>
+  <div class="ver">V4.0 &middot; sign in to start chatting</div>
+  <div class="tabs">
+    <button class="tab sel" id="tabin">Sign in</button>
+    <button class="tab" id="tabup">Sign up</button>
+  </div>
+  <form id="formin">
+    <input id="lemail" type="email" placeholder="Email" autocomplete="email">
+    <input id="lpass" type="password" placeholder="Password" autocomplete="current-password">
+    <button class="primary" type="submit">Sign in</button>
+  </form>
+  <form id="formup" style="display:none">
+    <input id="sname" placeholder="Your name" autocomplete="name">
+    <input id="semail" type="email" placeholder="Email" autocomplete="email">
+    <input id="spass" type="password" placeholder="Password (min 6 characters)" autocomplete="new-password">
+    <button class="primary" type="submit">Create account</button>
+  </form>
+  <div class="or">or continue with</div>
+  <div class="oauth">
+    <button class="obtn" id="gbtn"><span class="gi">G</span> Google</button>
+    <button class="obtn" id="fbtn"><span class="fi">f</span> Facebook</button>
+  </div>
+  <div class="autherr" id="err"></div>
+  <div class="note">Your chats are saved to your account so you can name them,
+  search them and come back to them anytime.</div>
+</div></div>
+<script>
+const err = document.getElementById('err');
+const tabin = document.getElementById('tabin');
+const tabup = document.getElementById('tabup');
+const formin = document.getElementById('formin');
+const formup = document.getElementById('formup');
+tabin.onclick = () => { tabin.classList.add('sel'); tabup.classList.remove('sel');
+  formin.style.display = 'block'; formup.style.display = 'none'; err.textContent = ''; };
+tabup.onclick = () => { tabup.classList.add('sel'); tabin.classList.remove('sel');
+  formup.style.display = 'block'; formin.style.display = 'none'; err.textContent = ''; };
+
+async function post(url, body) {
+  const r = await fetch(url, { method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || 'Something went wrong');
+  return data;
+}
+formin.onsubmit = async (e) => {
+  e.preventDefault(); err.textContent = '';
+  try {
+    await post('/api/auth/login', { email: lemail.value.trim(), password: lpass.value });
+    location.reload();
+  } catch (ex) { err.textContent = ex.message; }
+};
+formup.onsubmit = async (e) => {
+  e.preventDefault(); err.textContent = '';
+  try {
+    await post('/api/auth/signup', { name: sname.value.trim(),
+      email: semail.value.trim(), password: spass.value });
+    location.reload();
+  } catch (ex) { err.textContent = ex.message; }
+};
+
+(async () => {
+  try {
+    const cfg = await (await fetch('/api/auth/config')).json();
+    if (!cfg.google) {
+      gbtn.disabled = true;
+      gbtn.title = 'Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable';
+    }
+    if (!cfg.facebook) {
+      fbtn.disabled = true;
+      fbtn.title = 'Set FACEBOOK_CLIENT_ID and FACEBOOK_CLIENT_SECRET to enable';
+    }
+  } catch (ex) {}
+})();
+gbtn.onclick = () => { location.href = '/api/auth/google'; };
+fbtn.onclick = () => { location.href = '/api/auth/facebook'; };
+const q = new URLSearchParams(location.search);
+if (q.get('error')) err.textContent = q.get('error');
+</script>
+</body>
+</html>
+"""
 PAGE = r"""<!doctype html>
 <html>
 <head>
@@ -1826,65 +2270,64 @@ PAGE = r"""<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Novius</title>
 <style>
-  :root { --text:#e8f1f5; --dim:#8fa8b8; --blue:#3b82f6; --green:#34d399;
-          --line:rgba(125,180,220,.14); --panel:rgba(10,16,24,.55); }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  body { font-family:'Segoe UI',system-ui,sans-serif; background:#010409;
-         color:var(--text); height:100vh; display:flex; overflow:hidden; }
-  .aurora { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
-  .aurora i { position:absolute; border-radius:50%; filter:blur(90px); }
-  .a1 { width:55vw; height:55vw; top:-18vw; left:-12vw;
-        background:radial-gradient(circle, rgba(37,99,235,.55), transparent 65%);
-        animation:drift1 24s ease-in-out infinite alternate; }
-  .a2 { width:45vw; height:45vw; top:-12vw; right:-10vw;
-        background:radial-gradient(circle, rgba(16,185,129,.45), transparent 65%);
-        animation:drift2 30s ease-in-out infinite alternate; }
-  .a3 { width:50vw; height:50vw; bottom:-20vw; left:18vw;
-        background:radial-gradient(circle, rgba(45,212,191,.38), transparent 65%);
-        animation:drift3 27s ease-in-out infinite alternate; }
-  .a4 { width:35vw; height:35vw; bottom:-8vw; right:6vw;
-        background:radial-gradient(circle, rgba(59,130,246,.35), transparent 65%);
-        animation:drift4 33s ease-in-out infinite alternate; }
-  @keyframes drift1 { to { transform:translate(9vw,7vh) scale(1.18); } }
-  @keyframes drift2 { to { transform:translate(-7vw,9vh) scale(1.22); } }
-  @keyframes drift3 { to { transform:translate(6vw,-8vh) scale(1.15); } }
-  @keyframes drift4 { to { transform:translate(-8vw,-6vh) scale(1.2); } }
-  ::-webkit-scrollbar { width:8px; }
-  ::-webkit-scrollbar-thumb { background:rgba(90,150,190,.25); border-radius:8px; }
-  aside { width:270px; background:rgba(4,8,14,.72);
+""" + BASE_CSS + AURORA_CSS + """
+  aside { width:280px; background:rgba(4,8,14,.72);
           backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
           padding:14px; display:flex; flex-direction:column; gap:8px;
-          border-right:1px solid var(--line); z-index:2; }
-  .logo { font-size:20px; font-weight:700; padding:6px 8px 14px; letter-spacing:.4px;
+          border-right:1px solid rgba(59,130,246,.22); z-index:2; }
+  .logo { font-size:20px; font-weight:700; padding:6px 8px 12px; letter-spacing:.4px;
           background:linear-gradient(90deg,#60a5fa,#34d399);
           -webkit-background-clip:text; background-clip:text; color:transparent; }
   .newchat { background:var(--panel); border:1px solid var(--line); color:var(--text);
              padding:10px 12px; border-radius:10px; cursor:pointer; text-align:left;
              font-size:14px; }
   .newchat:hover { background:rgba(59,130,246,.15); border-color:rgba(59,130,246,.4); }
-  .models { margin-top:10px; display:flex; flex-direction:column; gap:8px;
-            overflow-y:auto; }
-  .mtitle { font-size:11px; text-transform:uppercase; letter-spacing:1px;
-            color:var(--dim); padding:4px 8px; }
-  .mcard { border:1px solid var(--line); background:transparent; color:var(--text);
-           border-radius:12px; padding:10px 12px; cursor:pointer; text-align:left; }
-  .mcard:hover { background:rgba(56,189,248,.08); }
-  .mcard.sel { border-color:rgba(52,211,153,.55);
-               background:linear-gradient(90deg, rgba(59,130,246,.14), rgba(52,211,153,.10)); }
-  .mcard .nm { font-weight:600; font-size:14px; display:flex;
-               justify-content:space-between; align-items:center; }
-  .mcard .tg { font-size:12px; color:var(--dim); margin-top:3px; }
-  .badge { font-size:10px; padding:2px 8px; border-radius:99px;
-           background:linear-gradient(90deg,#3b82f6,#34d399); color:#fff;
-           font-weight:600; }
-  .mcard.off .badge { background:#3a4450; }
-  .foot { margin-top:auto; font-size:11px; color:var(--dim); padding:8px;
-          line-height:1.5; }
-  main { flex:1; display:flex; flex-direction:column; z-index:1; }
-  header { padding:14px 22px; border-bottom:1px solid var(--line); font-size:14px;
+  .searchrow { display:flex; gap:6px; }
+  .searchrow input { flex:1; min-width:0; background:rgba(8,14,22,.7);
+                     border:1px solid var(--line); color:var(--text); border-radius:10px;
+                     padding:9px 11px; font:inherit; font-size:13px; outline:none; }
+  .searchrow input:focus { border-color:rgba(52,211,153,.5); }
+  #searchbtn { width:38px; border:1px solid var(--line); background:rgba(8,14,22,.7);
+               color:var(--dim); border-radius:10px; cursor:pointer; font-size:14px; }
+  #searchbtn:hover { color:var(--text); border-color:rgba(96,165,250,.5); }
+  .stitle { font-size:11px; text-transform:uppercase; letter-spacing:1px;
+            color:var(--dim); padding:6px 8px 0; }
+  .chatlist { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px;
+              padding:6px 2px 6px 0; min-height:0; }
+  .chatcard { position:relative; border:1px solid var(--line); background:transparent;
+              color:var(--text); border-radius:11px; padding:9px 30px 9px 11px;
+              cursor:pointer; flex-shrink:0; }
+  .chatcard:hover { background:rgba(56,189,248,.08); }
+  .chatcard.sel { border-color:rgba(52,211,153,.55);
+                  background:linear-gradient(90deg, rgba(59,130,246,.14), rgba(52,211,153,.10)); }
+  .chatcard .ct { font-size:13.5px; font-weight:600; white-space:nowrap;
+                  overflow:hidden; text-overflow:ellipsis; padding-right:4px; }
+  .chatcard .cp { font-size:11.5px; color:var(--dim); margin-top:2px;
+                  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cactions { position:absolute; top:7px; right:6px; display:none; gap:2px; }
+  .chatcard:hover .cactions { display:flex; }
+  .cbtn { border:none; background:transparent; color:var(--dim); cursor:pointer;
+          font-size:12px; padding:2px 5px; border-radius:6px; }
+  .cbtn:hover { color:var(--text); background:rgba(125,180,220,.12); }
+  .noresults { color:var(--dim); font-size:12.5px; text-align:center; padding:14px 6px; }
+  .foot { border-top:1px solid var(--line); padding-top:10px; font-size:12px;
+          color:var(--dim); display:flex; flex-direction:column; gap:8px; }
+  .foot .who { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .foot .who b { color:var(--text); }
+  #signout { border:1px solid var(--line); background:transparent; color:var(--dim);
+             font-size:12px; padding:7px 10px; border-radius:9px; cursor:pointer;
+             text-align:left; }
+  #signout:hover { color:var(--text); border-color:rgba(52,211,153,.5); }
+  main { flex:1; display:flex; flex-direction:column; z-index:1; min-width:0; }
+  header { padding:12px 22px; border-bottom:1px solid rgba(52,211,153,.2); font-size:14px;
            color:var(--dim); background:rgba(4,8,14,.5);
-           backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
+           backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+           display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   header b { color:var(--text); }
+  #modelsel { background:rgba(8,14,22,.75); color:var(--text); border:1px solid var(--line);
+              border-radius:10px; padding:7px 10px; font:inherit; font-size:13.5px;
+              cursor:pointer; outline:none; }
+  #modelsel:hover { border-color:rgba(96,165,250,.5); }
   #chat { flex:1; overflow-y:auto; padding:24px 0; }
   .inner { max-width:760px; margin:0 auto; padding:0 22px; display:flex;
            flex-direction:column; gap:22px; }
@@ -1911,8 +2354,9 @@ PAGE = r"""<!doctype html>
   .composer { padding:14px 22px 22px; }
   .box { max-width:760px; margin:0 auto; display:flex; gap:10px; align-items:flex-end;
          background:rgba(8,14,22,.75); backdrop-filter:blur(16px);
-         -webkit-backdrop-filter:blur(16px); border:1px solid var(--line);
-         border-radius:26px; padding:10px 10px 10px 18px; }
+         -webkit-backdrop-filter:blur(16px); border:1px solid rgba(59,130,246,.25);
+         border-radius:26px; padding:10px 10px 10px 18px;
+         box-shadow:0 0 34px rgba(16,185,129,.08); }
   textarea { flex:1; background:transparent; border:none; outline:none; resize:none;
              color:var(--text); font:inherit; max-height:140px; line-height:1.5; }
   #send { width:38px; height:38px; border-radius:50%; border:none; cursor:pointer;
@@ -1959,11 +2403,10 @@ PAGE = r"""<!doctype html>
   .copy:hover { color:var(--text); border-color:rgba(52,211,153,.5); }
   .box:focus-within { border-color:rgba(52,211,153,.45);
                       box-shadow:0 0 24px rgba(52,211,153,.12); }
-  .params { font-size:10px; color:var(--dim); }
   .learnnote { display:block; font-size:11px; color:var(--dim); margin-top:6px;
                font-style:italic; }
   @media (max-width:760px) {
-    aside { position:fixed; left:-280px; transition:left .2s; height:100vh; }
+    aside { position:fixed; left:-290px; transition:left .2s; height:100vh; }
     aside.open { left:0; }
     .burger { display:block !important; }
   }
@@ -1973,23 +2416,28 @@ PAGE = r"""<!doctype html>
 </style>
 </head>
 <body>
-<div class="aurora"><i class="a1"></i><i class="a2"></i><i class="a3"></i><i class="a4"></i></div>
+""" + AURORA_BLOBS + """
 <aside>
   <div class="logo">Novi<span>us</span></div>
   <button class="newchat" id="newchat">+ New chat</button>
-  <div class="mtitle">Models</div>
-  <div class="models" id="models"></div>
-  <div class="foot">Novius runs four transformer models trained from scratch
-    in NumPy. Every word is generated live - nothing is scripted - and
-    Novius learns from your chats as you talk.</div>
+  <div class="searchrow">
+    <input id="search" placeholder="Search your chats...">
+    <button id="searchbtn" title="Search">&#128269;</button>
+  </div>
+  <div class="stitle">Your chats</div>
+  <div class="chatlist" id="chatlist"></div>
+  <div class="foot">
+    <div class="who">Signed in as <b id="who"></b></div>
+    <button id="signout">Sign out</button>
+  </div>
 </aside>
 <main>
   <header><button class="burger" id="burger">&#9776;</button>Chatting with
-    <b id="curmodel">Crusta V3.0</b></header>
+    <select id="modelsel"></select></header>
   <div id="chat"><div class="inner" id="feed">
     <div class="welcome"><h1>Welcome to Novi<span>us</span></h1>
     <div class="ver">V4.0 &middot; four models &middot; learns from your chats</div>
-    <p>Pick a model on the left, then say anything.</p>
+    <p>Pick a model in the top bar, then say anything. Your chats are saved here.</p>
     <div class="chips">
       <button class="chip">What is love?</button>
       <button class="chip">what is 23*7</button>
@@ -2005,7 +2453,7 @@ PAGE = r"""<!doctype html>
     <button id="send" title="Send">&#8593;</button>
   </div>
   <div class="hint">Novius is a lightweight open-source AI trained on
-  Wikipedia, WordNet and internet chat - Enter to send.</div></div>
+  Wikipedia, WordNet, code and internet chat - Enter to send.</div></div>
 </main>
 <script>
 const feed = document.getElementById('feed');
@@ -2013,33 +2461,36 @@ const chat = document.getElementById('chat');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('send');
 const webbtn = document.getElementById('webbtn');
+const modelsel = document.getElementById('modelsel');
 let webMode = false;
+let model = 'crusta';
+let busy = false;
+let currentChat = null;
+
 webbtn.onclick = () => { webMode = !webMode;
   webbtn.classList.toggle('on', webMode);
   input.placeholder = webMode ? 'Ask anything - Novius will search the web...' :
                                 'Message Novius...'; };
-const curModel = document.getElementById('curmodel');
-let model = 'crusta';
-let busy = false;
-let turns = [];
 
 async function loadModels() {
   const models = await (await fetch('/api/models')).json();
-  const box = document.getElementById('models');
-  box.innerHTML = '';
+  modelsel.innerHTML = '';
   for (const m of models) {
-    const b = document.createElement('button');
-    b.className = 'mcard' + (m.id === model ? ' sel' : '') + (m.ready ? '' : ' off');
-    b.innerHTML = `<div class="nm">${m.label}
-      <span class="badge">${m.ready ? m.badge : 'not trained'}</span></div>
-      <div class="tg">${m.tagline} · ${m.params}</div>`;
-    b.onclick = () => { model = m.id; curModel.textContent = m.label;
-      loadModels(); };
-    box.appendChild(b);
+    const o = document.createElement('option');
+    o.value = m.id;
+    o.textContent = m.label + (m.ready ? '' : ' (not trained)');
+    if (m.id === model) o.selected = true;
+    modelsel.appendChild(o);
   }
 }
+modelsel.onchange = () => { model = modelsel.value; };
 
 function scroll() { chat.scrollTop = chat.scrollHeight; }
+
+function welcomeHTML() {
+  return `<div class="welcome"><h1>Welcome to Novi<span>us</span></h1>
+    <p>Pick a model in the top bar, then say anything.</p></div>`;
+}
 
 function addUser(text) {
   const w = document.querySelector('.welcome'); if (w) w.remove();
@@ -2063,10 +2514,80 @@ function addAI() {
   return row;
 }
 
+function renderStored(messages) {
+  feed.innerHTML = '';
+  if (!messages.length) { feed.innerHTML = welcomeHTML(); return; }
+  for (const m of messages) {
+    if (m.role === 'user') { addUser(m.text); continue; }
+    const row = document.createElement('div');
+    row.className = 'row ai';
+    row.innerHTML = `<div class="avatar">N</div><div class="content"></div>`;
+    row.querySelector('.content').textContent = m.text;
+    feed.appendChild(row);
+  }
+  scroll();
+}
+
+async function loadChats() {
+  const q = document.getElementById('search').value.trim();
+  const chats = await (await fetch('/api/chats' + (q ? '?q=' + encodeURIComponent(q) : ''))).json();
+  const box = document.getElementById('chatlist');
+  box.innerHTML = '';
+  if (!chats.length) {
+    box.innerHTML = '<div class="noresults">' + (q ? 'No chats match your search' : 'No chats yet - say something!') + '</div>';
+    return;
+  }
+  for (const c of chats) {
+    const d = document.createElement('div');
+    d.className = 'chatcard' + (c.id === currentChat ? ' sel' : '');
+    d.innerHTML = `<div class="ct"></div><div class="cp"></div>
+      <div class="cactions"><button class="cbtn ren" title="Rename">&#9998;</button>
+      <button class="cbtn del" title="Delete">&#10005;</button></div>`;
+    d.querySelector('.ct').textContent = c.title;
+    d.querySelector('.cp').textContent = c.preview;
+    d.onclick = (e) => { if (e.target.closest('.cbtn')) return; openChat(c.id); };
+    d.querySelector('.ren').onclick = () => renameChat(c);
+    d.querySelector('.del').onclick = () => deleteChat(c);
+    box.appendChild(d);
+  }
+}
+
+async function openChat(id) {
+  currentChat = id;
+  try {
+    const c = await (await fetch('/api/chats/' + id)).json();
+    renderStored(c.messages || []);
+  } catch (e) {}
+  loadChats();
+  if (window.innerWidth <= 760) document.querySelector('aside').classList.remove('open');
+}
+
+function newChat() {
+  currentChat = null;
+  feed.innerHTML = welcomeHTML();
+  loadChats();
+}
+
+async function renameChat(c) {
+  const title = prompt('Rename chat', c.title);
+  if (!title || !title.trim()) return;
+  await fetch('/api/chats/' + c.id + '/rename', { method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: title.trim() }) });
+  loadChats();
+}
+
+async function deleteChat(c) {
+  if (!confirm('Delete "' + c.title + '"?')) return;
+  await fetch('/api/chats/' + c.id + '/delete', { method: 'POST' });
+  if (currentChat === c.id) newChat(); else loadChats();
+}
+
 async function send() {
   const text = input.value.trim();
   if (!text || busy) return;
   busy = true; sendBtn.disabled = true; input.value = '';
+  input.style.height = 'auto';
   addUser(text);
   const row = addAI();
   const status = row.querySelector('.status');
@@ -2075,22 +2596,24 @@ async function send() {
   const reply = row.querySelector('.reply');
   let got = false;
   try {
-    const resp = await fetch('/api/chat', { method:'POST',
+    const resp = await fetch('/api/chat', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model, prompt: text, research: webMode,
-                             history: turns.slice(-6) }) });
+                             chat_id: currentChat }) });
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
     let buf = '';
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      buf += dec.decode(value, { stream:true });
+      buf += dec.decode(value, { stream: true });
       let i;
-      while ((i = buf.indexOf('\n')) >= 0) {
+      while ((i = buf.indexOf('\\n')) >= 0) {
         const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
         if (!line) continue;
         const evt = JSON.parse(line);
-        if (evt.type === 'status') {
+        if (evt.type === 'chat_id') { currentChat = evt.id; }
+        else if (evt.type === 'status') {
           status.innerHTML = evt.text ? '<span class="dots"><i></i><i></i><i></i></span>' : ''; }
         else if (evt.type === 'think') { think.style.display = 'block';
           tbody.textContent += evt.text; }
@@ -2099,12 +2622,12 @@ async function send() {
         else if (evt.type === 'source') {
           const a = document.createElement('a');
           a.className = 'srclink'; a.href = evt.url; a.target = '_blank';
-          a.rel = 'noopener'; a.textContent = '\u127760 Wikipedia source';
+          a.rel = 'noopener'; a.textContent = '\\u127760 Wikipedia source';
           row.querySelector('.content').appendChild(a); scroll(); }
         else if (evt.type === 'learned') {
           const n = document.createElement('span');
           n.className = 'learnnote';
-          n.textContent = '\u2726 learned from this chat';
+          n.textContent = '\\u2726 learned from this chat';
           row.querySelector('.content').appendChild(n); }
         else if (evt.type === 'error') { status.textContent = evt.text; }
       }
@@ -2112,7 +2635,6 @@ async function send() {
   } catch (e) { status.textContent = 'Connection error: ' + e; }
   row.querySelector('.cursor').remove();
   if (got) {
-    turns.push({ user: text, novius: reply.textContent });
     const cp = document.createElement('button');
     cp.className = 'copy'; cp.textContent = 'Copy';
     cp.onclick = () => { navigator.clipboard.writeText(reply.textContent);
@@ -2122,6 +2644,7 @@ async function send() {
   if (!got && !think.open && !tbody.textContent)
     status.innerHTML = status.innerHTML || '(no output)';
   busy = false; sendBtn.disabled = false; input.focus();
+  loadChats();
 }
 
 sendBtn.onclick = send;
@@ -2132,22 +2655,39 @@ input.addEventListener('input', () => {
   input.style.height = 'auto';
   input.style.height = Math.min(input.scrollHeight, 140) + 'px';
 });
-document.getElementById('newchat').onclick = () => {
-  turns = [];
-  feed.innerHTML = `<div class="welcome"><h1>Welcome to Novi<span>us</span></h1>
-    <p>Pick a model on the left, then say anything.</p></div>`;
-};
+document.getElementById('newchat').onclick = () => newChat();
 document.querySelectorAll('.chip').forEach(c => {
   c.onclick = () => { input.value = c.textContent; send(); };
 });
 document.getElementById('burger').onclick = () =>
   document.querySelector('aside').classList.toggle('open');
+document.getElementById('signout').onclick = async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  location.reload();
+};
+let searchTimer = null;
+document.getElementById('search').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadChats, 200);
+});
+document.getElementById('searchbtn').onclick = () => {
+  document.getElementById('search').focus(); loadChats();
+};
+(async () => {
+  try {
+    const me = await (await fetch('/api/auth/me')).json();
+    document.getElementById('who').textContent = me.name || me.email;
+  } catch (e) { location.reload(); }
+})();
 loadModels();
+loadChats();
 input.focus();
 </script>
 </body>
 </html>
 """
+class GenerationCancelled(Exception):
+    pass
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -2156,64 +2696,250 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-    def _send(self, code, ctype, body):
+    def _send(self, code, ctype, body, headers=None):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        for key, value in (headers or []):
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
+    def _json(self, code, obj, headers=None):
+        self._send(code, "application/json; charset=utf-8",
+                   json.dumps(obj).encode("utf-8"), headers)
+
+    def _redirect(self, location, headers=None):
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        for key, value in (headers or []):
+            self.send_header(key, value)
+        self.end_headers()
+
+    def _cookie(self, name):
+        for part in self.headers.get("Cookie", "").split(";"):
+            key, _, value = part.strip().partition("=")
+            if key == name:
+                return value
+        return None
+
+    def _user(self):
+        return session_email(self._cookie(_SESSION_COOKIE))
+
+    def _session_headers(self, token):
+        return [("Set-Cookie",
+                 f"{_SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; "
+                 f"Max-Age=2592000")]
+
+    def _body(self):
+        length = int(self.headers.get("Content-Length", 0))
+        try:
+            return json.loads(self.rfile.read(length) or b"{}")
+        except Exception:
+            return {}
+
     def do_GET(self):
-        if self.path in ("/", "/index.html"):
-            self._send(200, "text/html; charset=utf-8", PAGE.encode("utf-8"))
-        elif self.path == "/api/health/live":
-            self._send(200, "application/json", b'{"status":"ok"}')
-        elif self.path == "/api/models":
-            body = json.dumps(ENGINE.models()).encode("utf-8")
-            self._send(200, "application/json", body)
+        path, _, query = self.path.partition("?")
+        params = urllib.parse.parse_qs(query)
+        if path in ("/", "/index.html"):
+            if self._user():
+                self._send(200, "text/html; charset=utf-8", PAGE.encode("utf-8"))
+            else:
+                self._send(200, "text/html; charset=utf-8",
+                           LOGIN_PAGE.encode("utf-8"))
+        elif path == "/api/health/live":
+            self._json(200, {"status": "ok"})
+        elif path == "/api/auth/config":
+            self._json(200, oauth_configured())
+        elif path == "/api/auth/me":
+            email = self._user()
+            if not email:
+                self._json(401, {"error": "not signed in"})
+            else:
+                self._json(200, {"email": email, "name": user_name(email)})
+        elif path == "/api/models":
+            if not self._user():
+                self._json(401, {"error": "not signed in"})
+            else:
+                self._json(200, ENGINE.models())
+        elif path == "/api/chats":
+            email = self._user()
+            if not email:
+                self._json(401, {"error": "not signed in"})
+            else:
+                q = (params.get("q") or [""])[0]
+                self._json(200, list_chats(email, q))
+        elif path.startswith("/api/chats/"):
+            email = self._user()
+            chat = get_chat(email, path[len("/api/chats/"):])
+            if chat is None:
+                self._json(404, {"error": "chat not found"})
+            else:
+                self._json(200, chat)
+        elif path in ("/api/auth/google", "/api/auth/facebook"):
+            self._start_oauth(path.rsplit("/", 1)[-1])
+        elif path == "/oauth/callback/google":
+            self._finish_oauth("google", params)
+        elif path == "/oauth/callback/facebook":
+            self._finish_oauth("facebook", params)
+        elif path == "/logout":
+            token = self._cookie(_SESSION_COOKIE)
+            if token:
+                drop_session(token)
+            self._redirect("/", [("Set-Cookie",
+                                   f"{_SESSION_COOKIE}=; Path=/; Max-Age=0")])
         else:
             self._send(404, "text/plain", b"not found")
 
-    def do_POST(self):
-        if self.path != "/api/chat":
-            self._send(404, "text/plain", b"not found")
+    def _start_oauth(self, provider):
+        cfg = oauth_configured()
+        if not cfg.get(provider):
+            self._json(400, {
+                "error": f"{provider} sign-in is not configured on this server. "
+                         f"Set {provider.upper()}_CLIENT_ID and "
+                         f"{provider.upper()}_CLIENT_SECRET and restart Novius."})
             return
-        length = int(self.headers.get("Content-Length", 0))
-        req = json.loads(self.rfile.read(length) or b"{}")
-        name = req.get("model", "crusta")
-        prompt = str(req.get("prompt", "")).strip()
-        history = req.get("history")
-        if not isinstance(history, list):
-            history = []
-        if name not in MODEL_ZOO or not prompt:
-            self._send(400, "application/json",
-                       json.dumps({"type": "error", "text": "bad request"}).encode())
+        state = secrets.token_urlsafe(24)
+        with OAUTH_LOCK:
+            OAUTH_STATES[state] = time.time()
+        redirect_uri = _oauth_redirect_uri() + f"/oauth/callback/{provider}"
+        if provider == "google":
+            q = urllib.parse.urlencode({
+                "client_id": GOOGLE_CLIENT_ID, "redirect_uri": redirect_uri,
+                "response_type": "code", "scope": "openid email profile",
+                "state": state})
+            self._redirect(f"{_GOOGLE_AUTH}?{q}")
+        else:
+            q = urllib.parse.urlencode({
+                "client_id": FACEBOOK_CLIENT_ID, "redirect_uri": redirect_uri,
+                "response_type": "code", "scope": "email,public_profile",
+                "state": state})
+            self._redirect(f"{_FB_AUTH}?{q}")
+
+    def _finish_oauth(self, provider, params):
+        state = (params.get("state") or [""])[0]
+        with OAUTH_LOCK:
+            started = OAUTH_STATES.pop(state, None)
+        if not started or time.time() - started > 600:
+            self._redirect("/?error=" + urllib.parse.quote(
+                "Sign-in expired - please try again."))
             return
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
-
-        def emit(event):
-            try:
-                self.wfile.write((json.dumps(event) + "\n").encode("utf-8"))
-                self.wfile.flush()
-            except (ConnectionAbortedError, BrokenPipeError):
-                raise GenerationCancelled()
-
+        code = (params.get("code") or [""])[0]
+        redirect_uri = _oauth_redirect_uri() + f"/oauth/callback/{provider}"
         try:
-            ENGINE.chat(name, prompt, emit,
-                        research=bool(req.get("research")),
-                        history=history)
-        except GenerationCancelled:
+            if provider == "google":
+                email, name = _google_profile(code, redirect_uri)
+            else:
+                email, name = _facebook_profile(code, redirect_uri)
+        except Exception as exc:
+            self._redirect("/?error=" + urllib.parse.quote(
+                f"{provider} sign-in failed: {exc}"))
             return
+        if not email:
+            self._redirect("/?error=" + urllib.parse.quote(
+                f"Could not read an email from your {provider} account - "
+                "make sure email sharing is enabled."))
+            return
+        with STORE_LOCK:
+            users = _load_json(USERS_FILE, {})
+            key = email.lower()
+            if key not in users:
+                users[key] = {"name": (name or key.split("@")[0]).strip(),
+                              "provider": provider}
+                _save_json(USERS_FILE, users)
+        self._redirect("/", self._session_headers(new_session(key)))
+
+    def do_POST(self):
+        path = self.path.partition("?")[0]
+        if path == "/api/auth/signup":
+            body = self._body()
+            email = str(body.get("email", "")).strip()
+            if not _valid_email(email):
+                self._json(400, {"error": "Please enter a valid email address."})
+                return
+            user, err = create_account(str(body.get("name", "")).strip(),
+                                       email, str(body.get("password", "")))
+            if err:
+                self._json(400, {"error": err})
+                return
+            self._json(200, {"ok": True},
+                       self._session_headers(new_session(email)))
+        elif path == "/api/auth/login":
+            body = self._body()
+            email = str(body.get("email", "")).strip()
+            if not verify_account(email, str(body.get("password", ""))):
+                self._json(401, {"error": "Wrong email or password."})
+                return
+            self._json(200, {"ok": True},
+                       self._session_headers(new_session(email)))
+        elif path == "/api/logout":
+            token = self._cookie(_SESSION_COOKIE)
+            if token:
+                drop_session(token)
+            self._json(200, {"ok": True})
+        elif path == "/api/chat":
+            email = self._user()
+            if not email:
+                self._json(401, {"error": "not signed in"})
+                return
+            body = self._body()
+            name = body.get("model", "crusta")
+            prompt = str(body.get("prompt", "")).strip()
+            if name not in MODEL_ZOO or not prompt:
+                self._json(400, {"error": "bad request"})
+                return
+            chat = get_chat(email, str(body.get("chat_id", "")))
+            if chat is None:
+                chat = create_chat(email, prompt[:48])
+            history = chat_history(chat.get("messages", []))
+            append_message(email, chat["id"], "user", prompt)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+
+            def emit(event):
+                try:
+                    self.wfile.write((json.dumps(event) + "\n").encode("utf-8"))
+                    self.wfile.flush()
+                except (ConnectionAbortedError, BrokenPipeError):
+                    raise GenerationCancelled()
+
+            try:
+                emit({"type": "chat_id", "id": chat["id"]})
+                reply = ENGINE.chat(name, prompt, emit,
+                                    research=bool(body.get("research")),
+                                    history=history)
+                if reply and reply.strip():
+                    append_message(email, chat["id"], "novius", reply.strip())
+            except GenerationCancelled:
+                return
+        elif path.startswith("/api/chats/"):
+            email = self._user()
+            if not email:
+                self._json(401, {"error": "not signed in"})
+                return
+            rest = path[len("/api/chats/"):]
+            if rest.endswith("/rename"):
+                body = self._body()
+                title = str(body.get("title", "")).strip()
+                if title and rename_chat(email, rest[:-len("/rename")], title):
+                    self._json(200, {"ok": True})
+                else:
+                    self._json(404, {"error": "chat not found"})
+            elif rest.endswith("/delete"):
+                if delete_chat(email, rest[:-len("/delete")]):
+                    self._json(200, {"ok": True})
+                else:
+                    self._json(404, {"error": "chat not found"})
+            else:
+                self._json(404, {"error": "not found"})
+        else:
+            self._send(404, "text/plain", b"not found")
 
     def do_HEAD(self):
         self._send(200, "text/html", b"")
-
-
-class GenerationCancelled(Exception):
-    pass
 
 
 def serve():

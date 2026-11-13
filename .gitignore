@@ -87,3 +87,6 @@ wordnet_pkg/
 cpython.tar.gz
 common_words.txt
 wikitext.zip
+users.json
+chats.json
+sessions.json

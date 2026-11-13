@@ -22,6 +22,33 @@ and a background learner periodically finetunes the models on what you
 talked about — the more you chat, the better it gets. You'll see a small
 "✦ learned from this chat" note when an exchange is added to its memory.
 
+## Accounts & your chats
+
+Sign-in is required: the app opens on a **sign-in / sign-up** page with
+**email + password**, or **Google** and **Facebook** sign-in. Accounts,
+sessions and every named chat are stored locally in JSON files next to
+`novius.py` (`users.json`, `sessions.json`, `chats.json`) — nothing leaves
+your machine.
+
+- **Sidebar** — your named chats in a scrollable list with a live **search**
+  (searches titles *and* all messages), rename (✎) and delete (✕) on hover.
+- **Top bar** — the model picker lives in the header now; pick Avion, Qlux,
+  Crusta or Hyron for any chat.
+- **Model memory** — multi-turn context is rebuilt from the saved chat, so
+  Novius remembers the conversation even after a refresh.
+
+Google / Facebook sign-in uses standard OAuth2. To enable them, set the
+environment variables and restart:
+
+```bash
+export GOOGLE_CLIENT_ID=...      export GOOGLE_CLIENT_SECRET=...
+export FACEBOOK_CLIENT_ID=...    export FACEBOOK_CLIENT_SECRET=...
+# redirect URI to register: http://127.0.0.1:8763/oauth/callback/<provider>
+```
+
+Without credentials, email sign-up still works and the Google/Facebook
+buttons show a hint instead of failing silently.
+
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## The models (V3.0)
