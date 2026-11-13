@@ -24,20 +24,19 @@ talked about — the more you chat, the better it gets. You'll see a small
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
-## The models
+## The models (V3.0)
 
-| Model | Params | Architecture | Context | Thinking phase |
-|---|---|---|---|---|
-| **Avion V3.0** — the very fast thinker | 234k | 2 layers × 64, 4 heads | 64 tok | none (instant) |
-| **Qlux V3.0** — quick thinker | 664k | 2 layers × 128, 4 heads | 64 tok | 12 thought tokens |
-| **Crusta V3.0** — balanced thinker | 1.7M | 3 layers × 192, 6 heads | 64 tok | 24 thought tokens |
-| **Hyron V3.0** — the most powerful thinker | 5.3M | 6 layers × 256, 8 heads | 64 tok | 48 thought tokens |
-| **Nexon V4.0** — the deepest thinker, codes | 6.9M | 8 layers × 256, 8 heads | 192 tok | 96 thought tokens |
+| Model | Params | Architecture | Thinking phase |
+|---|---|---|---|
+| **Avion V3.0** — the very fast thinker | 234k | 2 layers × 64, 4 heads | none (instant) |
+| **Qlux V3.0** — quick thinker | 664k | 2 layers × 128, 4 heads | 24 thought tokens |
+| **Crusta V3.0** — balanced thinker | 1.7M | 3 layers × 192, 6 heads | 48 thought tokens |
+| **Hyron V3.0** — the most powerful thinker | 5.3M | 6 layers × 256, 8 heads | 96 thought tokens |
 
 The "thinking" is real: heavier models first generate thought tokens at a higher
 temperature (shown in a collapsible *Thought process* panel), then generate their
-answer. Nexon V4.0 thinks for twice as long as Hyron before answering. Thoughts
-are display-only — they are never fed back into the answer context, which keeps
+answer. In V4.0 every thinker thinks twice as long as before. Thoughts are
+display-only — they are never fed back into the answer context, which keeps
 answers clean.
 
 ## What it learned
@@ -51,8 +50,8 @@ Training data (auto-downloaded on first training, ~400 MB total):
 - **TinyStories** — clean, grammatical simple English
 - **Chat corpus** — internet slang, broken grammar (`we was late lol`,
   `should of known better`) and everyday Q&A
-- **CPython source code** — real Python modules, so Nexon V4.0 can talk
-  about and write code (35% of its training batches)
+- **CPython source code** — real Python modules, so the models can talk
+  about and write code
 - **Code Q&A** — ~50 question → answer pairs like `how do i reverse a list
   in python` → `you can use slicing: mylist[::-1]`
 
@@ -74,21 +73,20 @@ pip install numpy
 
 Pre-trained weights are included in this repo (`weights_*.txt`). To train any
 model from scratch yourself, delete its weights file and run the train command
-below (~30 min for Avion up to a few hours for Hyron on a typical CPU; Nexon
-V4.0 is the biggest and takes the longest — it also downloads and reads real
-Python source code). If you trained before V4.0, delete `corpus.txt` once so
-the code data is added to the main corpus.
+below (~30 min for Avion up to a few hours for Hyron on a typical CPU). If you
+trained before V4.0, delete `corpus.txt` once so the code data is added to the
+main corpus.
 
 ## Usage
 
 ```bash
 python novius.py                    # start the web UI at http://127.0.0.1:8763
 python novius.py train              # (re)train all models
-python novius.py train nexon        # (re)train one model
+python novius.py train hyron        # (re)train one model
 python novius.py finetune           # re-run the Q&A tuning pass
 python novius.py gen hyron "hi"     # one-shot generation in the terminal
 python novius.py learn              # finetune all models on your saved chats
-python novius.py learn nexon        # finetune one model on your saved chats
+python novius.py learn hyron        # finetune one model on your saved chats
 ```
 
 Or use the engine from Python:
@@ -114,10 +112,8 @@ for e in events:
   softmax cross-entropy, Adam with warmup + cosine decay and gradient clipping.
   All forward/backward math is hand-written NumPy, verified against finite
   differences.
-- **Training** — main pass over the full corpus, then a dialogue-format finetune
-  pass (see above). Nexon V4.0 additionally trains on the code corpus for 35%
-  of its batches and uses a 4× longer context (192 tokens) so it can follow
-  whole conversations and write longer code.
+- **Training** — main pass over the full corpus (which now includes real
+  Python source code), then a dialogue-format finetune pass (see above).
 - **Calculator tool** — a small AST-whitelisted evaluator handles arithmetic
   prompts before generation; everything else goes to the neural models.
 - **Internet research tool** — optional toggle; searches the Wikipedia API

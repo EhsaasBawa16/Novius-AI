@@ -1,15 +1,14 @@
 """
 Novius - a ChatGPT-style AI chat app in pure Python + NumPy.
 
-A local web UI (no frameworks, stdlib only) for a family of five
+A local web UI (no frameworks, stdlib only) for a family of four
 GPT-style transformer models trained from scratch on general English:
 
   Avion  V3.0 - the very fast thinker (smallest net, instant replies)
   Qlux   V3.0 - quick thinker (small net, brief thinking phase)
   Crusta V3.0 - balanced thinker (medium net, medium thinking phase)
-  Hyron  V3.0 - the most powerful thinker (largest net, deepest thinking)
-  Nexon  V4.0 - the deepest thinker that codes (longest context, longest
-                thinking phase, trained on real Python source code)
+  Hyron  V3.0 - the most powerful thinker (largest net, deepest thinking,
+                trained on real Python source code too)
 
 Training data (auto-downloaded on first train, ~400 MB total):
   WikiText-103      real English Wikipedia articles
@@ -18,7 +17,7 @@ Training data (auto-downloaded on first train, ~400 MB total):
   Webster dictionary  ~40k extra word definitions
   TinyStories       clean, grammatical simple English stories
   chat corpus       internet slang, broken grammar and everyday Q&A
-  CPython sources   real Python code (mostly for Nexon V4.0)
+  CPython sources   real Python code, so the models can talk about code
 
 Novius also LEARNS FROM YOU: every chat exchange is saved to memory.jsonl
 and a background learner periodically finetunes the models on what you
@@ -41,8 +40,7 @@ Files (created next to this script):
   corpus.txt            assembled training text
   corpus_tokens.npy     tokenized corpus cache
   corpus_tokenizer.json tokenizer cache
-  code_corpus.txt       Python source code corpus (for Nexon)
-  code_tokens.npy       tokenized code corpus cache
+  code_corpus.txt       Python source code corpus
   finetune_v4.txt       Q&A + chat + code data used for the final tuning pass
   finetune_tokens_v4.npy  tokenized finetune cache
   memory.jsonl          everything you chat - the online-learning data
@@ -50,17 +48,16 @@ Files (created next to this script):
   weights_qlux.txt
   weights_crusta.txt
   weights_hyron.txt
-  weights_nexon.txt
 
 Usage:
   python novius.py train            train all models (several hours on CPU)
-  python novius.py train nexon      train a single model
+  python novius.py train hyron      train a single model
   python novius.py finetune         final Q&A tuning pass on all models
   python novius.py finetune hyron   tune a single model
   python novius.py                  start the Novius web UI (http://127.0.0.1:8763)
   python novius.py gen hyron "hi"   one-shot generation in the terminal
   python novius.py learn            finetune all models on your saved chats
-  python novius.py learn nexon      finetune one model on your saved chats
+  python novius.py learn hyron      finetune one model on your saved chats
 
 Requires:  pip install numpy
 """
@@ -104,7 +101,7 @@ MODEL_ZOO = {
         "config": {"d_model": 64, "n_heads": 4, "n_layers": 2, "d_ff": 256},
         "train_steps": 4000,
         "gen": {"max_new_tokens": 90, "temperature": 0.45, "top_k": 40,
-                "think_tokens": 0, "rep": 1.12},
+                "think_tokens": 0, "rep": 1.12},  # instant
     },
     "qlux": {
         "label": "Qlux V3.0",
@@ -113,7 +110,7 @@ MODEL_ZOO = {
         "config": {"d_model": 128, "n_heads": 4, "n_layers": 2, "d_ff": 512},
         "train_steps": 6000,
         "gen": {"max_new_tokens": 110, "temperature": 0.4, "top_k": 50,
-                "think_tokens": 12, "rep": 1.15},
+                "think_tokens": 24, "rep": 1.15},
     },
     "crusta": {
         "label": "Crusta V3.0",
@@ -122,7 +119,7 @@ MODEL_ZOO = {
         "config": {"d_model": 192, "n_heads": 6, "n_layers": 3, "d_ff": 768},
         "train_steps": 7000,
         "gen": {"max_new_tokens": 130, "temperature": 0.35, "top_k": 40,
-                "think_tokens": 24, "rep": 1.15},
+                "think_tokens": 48, "rep": 1.15},
     },
     "hyron": {
         "label": "Hyron V3.0",
@@ -130,20 +127,8 @@ MODEL_ZOO = {
         "badge": "Most powerful",
         "config": {"d_model": 256, "n_heads": 8, "n_layers": 6, "d_ff": 1024},
         "train_steps": 7000,
-        "gen": {"max_new_tokens": 160, "temperature": 0.3, "top_k": 40,
-                "think_tokens": 48, "rep": 1.18},
-    },
-    "nexon": {
-        "label": "Nexon V4.0",
-        "tagline": "The deepest thinker - codes, long memory",
-        "badge": "V4 · Codes",
-        "config": {"d_model": 256, "n_heads": 8, "n_layers": 8, "d_ff": 1024,
-                   "block_size": 192},
-        "train_steps": 3000,
-        "batch_size": 8,
-        "code_mix": 0.35,
-        "gen": {"max_new_tokens": 220, "temperature": 0.3, "top_k": 40,
-                "think_tokens": 96, "rep": 1.22},
+        "gen": {"max_new_tokens": 200, "temperature": 0.3, "top_k": 40,
+                "think_tokens": 96, "rep": 1.18},
     },
 }
 
@@ -972,12 +957,11 @@ def _code_dialogue_text(repeat=1):
     return ("\n".join(out) + "\n") * repeat
 
 
-# Real Python source code (mostly for Nexon V4.0). We stream the first
+# Real Python source code for the training corpus. We stream the first
 # ~45 MB of the CPython 3.12 release tarball and keep the Lib/*.py files.
 CODE_URL = "https://github.com/python/cpython/archive/refs/tags/v3.12.4.tar.gz"
 CODE_TARBALL = os.path.join(HERE, "cpython.tar.gz")
 CODE_TEXT_FILE = os.path.join(HERE, "code_corpus.txt")
-CODE_TOKENS_FILE = os.path.join(HERE, "code_tokens.npy")
 
 
 def _code_text(cap=12_000_000):
@@ -1012,18 +996,6 @@ def _code_text(cap=12_000_000):
         f.write(text)
     print(f"Code corpus: {len(text) / 1e6:.1f} MB of Python source")
     return text
-
-
-def load_code_tokens():
-    if os.path.exists(CODE_TOKENS_FILE) and os.path.exists(TOKCACHE_FILE):
-        return np.load(CODE_TOKENS_FILE)
-    if not os.path.exists(TOKCACHE_FILE):
-        return None
-    tok = BPETokenizer.from_payload(
-        json.load(open(TOKCACHE_FILE, encoding="utf-8")))
-    data = tokenize_corpus(tok, _code_text())
-    np.save(CODE_TOKENS_FILE, data)
-    return data
 
 
 def _build_finetune(top_qa, rest_qa, slang, stories_head):
@@ -1350,13 +1322,6 @@ def train_model(name):
     print(f"[{spec['label']}] corpus: {len(data):,} tokens, "
           f"vocab {len(tok.vocab)}")
 
-    code_data = None
-    if spec.get("code_mix"):
-        code_data = load_code_tokens()
-        if code_data is not None:
-            print(f"[{spec['label']}] code corpus: {len(code_data):,} tokens "
-                  f"({spec['code_mix']:.0%} of batches)")
-
     config = dict(BASE_CONFIG, **spec["config"])
     model = GPT(config)
     opt = Adam(model.p)
@@ -1370,12 +1335,9 @@ def train_model(name):
         progress = max(step - WARMUP, 0) / max(steps - WARMUP, 1)
         cosine = 0.5 * (1.0 + math.cos(math.pi * min(progress, 1.0)))
         lr = LR * warm * (MIN_LR_FRAC + (1.0 - MIN_LR_FRAC) * cosine)
-        src = data
-        if code_data is not None and rng.random() < spec["code_mix"]:
-            src = code_data
-        ix = rng.integers(0, len(src) - T - 1, size=B)
-        x = np.stack([src[i:i + T] for i in ix])
-        y = np.stack([src[i + 1:i + T + 1] for i in ix])
+        ix = rng.integers(0, len(data) - T - 1, size=B)
+        x = np.stack([data[i:i + T] for i in ix])
+        y = np.stack([data[i + 1:i + T + 1] for i in ix])
         loss, grads = loss_and_grads(model, x, y)
         opt.step(model.p, grads, lr)
         if step % 200 == 0 or step == 1:
@@ -2017,7 +1979,7 @@ PAGE = r"""<!doctype html>
   <button class="newchat" id="newchat">+ New chat</button>
   <div class="mtitle">Models</div>
   <div class="models" id="models"></div>
-  <div class="foot">Novius runs five transformer models trained from scratch
+  <div class="foot">Novius runs four transformer models trained from scratch
     in NumPy. Every word is generated live - nothing is scripted - and
     Novius learns from your chats as you talk.</div>
 </aside>
@@ -2026,7 +1988,7 @@ PAGE = r"""<!doctype html>
     <b id="curmodel">Crusta V3.0</b></header>
   <div id="chat"><div class="inner" id="feed">
     <div class="welcome"><h1>Welcome to Novi<span>us</span></h1>
-    <div class="ver">V4.0 &middot; five models &middot; learns from your chats</div>
+    <div class="ver">V4.0 &middot; four models &middot; learns from your chats</div>
     <p>Pick a model on the left, then say anything.</p>
     <div class="chips">
       <button class="chip">What is love?</button>

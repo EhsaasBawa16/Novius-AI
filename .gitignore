@@ -77,7 +77,6 @@ corpus.txt
 corpus_tokens.npy
 corpus_tokenizer.json
 code_corpus.txt
-code_tokens.npy
 finetune*.txt
 finetune_tokens*.npy
 memory.jsonl
