@@ -2080,95 +2080,106 @@ def chat_history(messages, limit=4):
             pending = None
     return turns[-limit:]
 AURORA_BLOBS = ('<div class="aurora"><i class="a1"></i><i class="a2"></i>'
-                '<i class="a3"></i><i class="a4"></i><i class="a5"></i>'
-                '<i class="a6"></i><i class="a7"></i></div>')
+                '<i class="a3"></i><div class="grid"></div></div>')
 
 AURORA_CSS = """
   .aurora { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
-  .aurora i { position:absolute; border-radius:50%; filter:blur(90px); }
-  .a1 { width:55vw; height:55vw; top:-18vw; left:-12vw;
-        background:radial-gradient(circle, rgba(37,99,235,.6), transparent 65%);
-        animation:drift1 24s ease-in-out infinite alternate; }
-  .a2 { width:45vw; height:45vw; top:-12vw; right:-10vw;
-        background:radial-gradient(circle, rgba(16,185,129,.5), transparent 65%);
-        animation:drift2 30s ease-in-out infinite alternate; }
-  .a3 { width:50vw; height:50vw; bottom:-20vw; left:18vw;
-        background:radial-gradient(circle, rgba(45,212,191,.42), transparent 65%);
-        animation:drift3 27s ease-in-out infinite alternate; }
-  .a4 { width:35vw; height:35vw; bottom:-8vw; right:6vw;
-        background:radial-gradient(circle, rgba(59,130,246,.4), transparent 65%);
-        animation:drift4 33s ease-in-out infinite alternate; }
-  .a5 { width:30vw; height:30vw; top:30vh; left:38vw;
-        background:radial-gradient(circle, rgba(52,211,153,.28), transparent 65%);
-        animation:drift2 21s ease-in-out infinite alternate-reverse; }
-  .a6 { width:26vw; height:26vw; top:6vh; left:30vw;
-        background:radial-gradient(circle, rgba(96,165,250,.3), transparent 65%);
-        animation:drift1 19s ease-in-out infinite alternate-reverse; }
-  .a7 { width:40vw; height:40vw; top:40vh; right:-14vw;
-        background:radial-gradient(circle, rgba(20,184,166,.3), transparent 65%);
-        animation:drift3 36s ease-in-out infinite alternate; }
-  .aurora::after { content:""; position:absolute; inset:0;
-        background:linear-gradient(120deg, rgba(59,130,246,.12),
-                   rgba(52,211,153,.12), rgba(45,212,191,.12));
-        background-size:300% 300%; animation:aurshift 18s ease infinite; }
-  @keyframes drift1 { to { transform:translate(9vw,7vh) scale(1.18); } }
-  @keyframes drift2 { to { transform:translate(-7vw,9vh) scale(1.22); } }
-  @keyframes drift3 { to { transform:translate(6vw,-8vh) scale(1.15); } }
-  @keyframes drift4 { to { transform:translate(-8vw,-6vh) scale(1.2); } }
-  @keyframes aurshift { 0%,100% { background-position:0% 50%; }
-                        50% { background-position:100% 50%; } }
+  .aurora i { position:absolute; border-radius:50%; filter:blur(100px); will-change:transform; }
+  .a1 { width:55vw; height:55vw; top:-20vw; left:-14vw;
+        background:radial-gradient(circle,rgba(37,99,235,.46),transparent 65%);
+        animation:d1 26s ease-in-out infinite alternate; }
+  .a2 { width:45vw; height:45vw; top:-14vw; right:-12vw;
+        background:radial-gradient(circle,rgba(16,185,129,.34),transparent 65%);
+        animation:d2 31s ease-in-out infinite alternate; }
+  .a3 { width:50vw; height:50vw; bottom:-24vw; left:20vw;
+        background:radial-gradient(circle,rgba(45,212,191,.28),transparent 65%);
+        animation:d3 28s ease-in-out infinite alternate; }
+  .grid { position:absolute; inset:0; opacity:.5;
+          background-image:linear-gradient(var(--line) 1px,transparent 1px),
+                           linear-gradient(90deg,var(--line) 1px,transparent 1px);
+          background-size:56px 56px;
+          -webkit-mask-image:radial-gradient(ellipse 70% 60% at 50% 30%,#000,transparent 75%);
+          mask-image:radial-gradient(ellipse 70% 60% at 50% 30%,#000,transparent 75%); }
+  @keyframes d1 { to { transform:translate(9vw,7vh) scale(1.15); } }
+  @keyframes d2 { to { transform:translate(-7vw,9vh) scale(1.2); } }
+  @keyframes d3 { to { transform:translate(6vw,-8vh) scale(1.12); } }
 """
 
 BASE_CSS = """
-  :root { --text:#e8f1f5; --dim:#8fa8b8; --blue:#3b82f6; --green:#34d399;
-          --line:rgba(125,180,220,.14); --panel:rgba(10,16,24,.55); }
+  :root { --text:#e9f3f7; --dim:#8aa3b3; --mute:#5d7686; --blue:#3b82f6; --teal:#2dd4bf; --green:#34d399;
+          --grad:linear-gradient(135deg,#3b82f6 0%,#2dd4bf 60%,#34d399 100%);
+          --grad-h:linear-gradient(90deg,#60a5fa,#2dd4bf 55%,#34d399);
+          --line:rgba(130,190,225,.13); --line2:rgba(130,190,225,.26); --panel:rgba(9,17,27,.62);
+          --ease:cubic-bezier(.2,.8,.2,1); }
   * { box-sizing:border-box; margin:0; padding:0; }
-  body { font-family:'Segoe UI',system-ui,sans-serif; background:#010409;
-         color:var(--text); height:100vh; display:flex; overflow:hidden; }
+  body { font-family:'Inter','Segoe UI Variable Text','Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+         background:#03080f; color:var(--text); height:100vh; height:100dvh; display:flex; overflow:hidden;
+         -webkit-font-smoothing:antialiased; }
+  button { font-family:inherit; color:inherit; }
+  :focus-visible { outline:2px solid rgba(45,212,191,.7); outline-offset:2px; }
+  svg { display:block; }
   ::-webkit-scrollbar { width:8px; }
-  ::-webkit-scrollbar-thumb { background:rgba(90,150,190,.25); border-radius:8px; }
+  ::-webkit-scrollbar-thumb { background:rgba(90,150,190,.22); border-radius:8px; }
 """
+
+FAVICON = ('<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='
+           "'http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E"
+           "%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E"
+           "%3Cstop stop-color='%233b82f6'/%3E%3Cstop offset='1' stop-color='%2334d399'/%3E"
+           '%3C/linearGradient%3E%3C/defs%3E%3Crect width='
+           "'32' height='32' rx='9' fill='url(%23g)'/%3E"
+           "%3Cpath d='M10 23V9l12 14V9' stroke='white' stroke-width='3' fill='none' "
+           "stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E'>")
+
 LOGIN_PAGE = r"""<!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#03080f">
 <title>Sign in - Novius</title>
+""" + FAVICON + """
 <style>
 """ + BASE_CSS + AURORA_CSS + """
   .authwrap { position:relative; z-index:1; margin:auto; width:100%;
               display:flex; justify-content:center; padding:20px; }
-  .authcard { width:400px; max-width:100%; background:rgba(6,12,20,.72);
-              backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
-              border:1px solid var(--line); border-radius:22px; padding:30px 28px;
+  .authcard { width:410px; max-width:100%; background:rgba(6,12,20,.72);
+              backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px);
+              border:1px solid var(--line2); border-radius:22px; padding:30px 28px;
               box-shadow:0 0 60px rgba(37,99,235,.18), 0 0 90px rgba(16,185,129,.10); }
-  .logo { font-size:26px; font-weight:700; text-align:center; letter-spacing:.4px;
-          background:linear-gradient(90deg,#60a5fa,#34d399);
+  .brandrow { display:flex; align-items:center; justify-content:center; gap:11px; }
+  .mark { width:38px; height:38px; border-radius:11px; background:var(--grad); display:grid; place-items:center;
+          box-shadow:0 6px 22px -4px rgba(45,212,191,.55), inset 0 1px 0 rgba(255,255,255,.35); }
+  .logo { font-size:24px; font-weight:700; letter-spacing:.2px; background:var(--grad-h);
           -webkit-background-clip:text; background-clip:text; color:transparent; }
-  .ver { text-align:center; font-size:11px; letter-spacing:2px; text-transform:uppercase;
-         color:var(--dim); margin:8px 0 20px; }
+  .ver { text-align:center; font-size:10.5px; letter-spacing:2.2px; text-transform:uppercase;
+         color:var(--mute); margin:10px 0 20px; }
   .tabs { display:flex; gap:6px; background:rgba(10,18,28,.6); padding:4px;
           border-radius:12px; border:1px solid var(--line); margin-bottom:18px; }
   .tab { flex:1; border:none; background:transparent; color:var(--dim); padding:9px;
-         border-radius:9px; cursor:pointer; font:inherit; font-size:14px; }
+         border-radius:9px; cursor:pointer; font:inherit; font-size:14px; transition:all .2s var(--ease); }
   .tab.sel { background:linear-gradient(135deg,rgba(59,130,246,.25),rgba(52,211,153,.2));
              color:var(--text); }
   input { width:100%; background:rgba(8,14,22,.7); border:1px solid var(--line);
-          color:var(--text); border-radius:10px; padding:11px 13px; font:inherit;
-          font-size:14px; outline:none; margin-bottom:10px; }
-  input:focus { border-color:rgba(52,211,153,.5); }
-  .primary { width:100%; border:none; border-radius:10px; padding:12px; cursor:pointer;
-             color:#fff; font:inherit; font-size:15px; font-weight:600;
-             background:linear-gradient(135deg,#3b82f6,#34d399); margin-top:4px; }
-  .primary:hover { filter:brightness(1.1); }
-  .or { display:flex; align-items:center; gap:10px; color:var(--dim); font-size:12px;
+          color:var(--text); border-radius:12px; padding:11px 13px; font:inherit;
+          font-size:14px; outline:none; margin-bottom:10px; transition:all .2s var(--ease); }
+  input:focus { border-color:rgba(45,212,191,.55); box-shadow:0 0 0 4px rgba(45,212,191,.08); }
+  input::placeholder { color:var(--mute); }
+  .primary { width:100%; border:none; border-radius:12px; padding:12px; cursor:pointer;
+             color:#03120f; font:inherit; font-size:15px; font-weight:700;
+             background:var(--grad); margin-top:4px; transition:all .2s var(--ease);
+             box-shadow:0 8px 24px -8px rgba(45,212,191,.6); }
+  .primary:hover { transform:translateY(-1px); filter:brightness(1.08); }
+  .or { display:flex; align-items:center; gap:10px; color:var(--mute); font-size:12px;
         margin:16px 0 10px; }
   .or::before, .or::after { content:""; flex:1; height:1px; background:var(--line); }
   .oauth { display:flex; gap:10px; }
   .obtn { flex:1; display:flex; align-items:center; justify-content:center; gap:8px;
           background:rgba(8,14,22,.7); border:1px solid var(--line); color:var(--text);
-          border-radius:10px; padding:10px; cursor:pointer; font:inherit; font-size:13.5px; }
-  .obtn:hover { border-color:rgba(96,165,250,.5); }
+          border-radius:12px; padding:10px; cursor:pointer; font:inherit; font-size:13.5px;
+          transition:all .2s var(--ease); }
+  .obtn:hover { border-color:rgba(96,165,250,.5);
+                background:linear-gradient(120deg,rgba(59,130,246,.12),rgba(52,211,153,.08)); }
   .obtn:disabled { opacity:.45; cursor:not-allowed; }
   .obtn .gi { color:#60a5fa; font-weight:700; }
   .obtn .fi { color:#34d399; font-weight:700; }
@@ -2181,7 +2192,8 @@ LOGIN_PAGE = r"""<!doctype html>
 <body>
 """ + AURORA_BLOBS + """
 <div class="authwrap"><div class="authcard">
-  <div class="logo">Novi<span>us</span></div>
+  <div class="brandrow"><div class="mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19V5l12 14V5"/></svg></div>
+    <span class="logo">Novius</span></div>
   <div class="ver">V4.0 &middot; sign in to start chatting</div>
   <div class="tabs">
     <button class="tab sel" id="tabin">Sign in</button>
@@ -2263,275 +2275,310 @@ if (q.get('error')) err.textContent = q.get('error');
 </body>
 </html>
 """
+
 PAGE = r"""<!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#03080f">
 <title>Novius</title>
+""" + FAVICON + """
 <style>
 """ + BASE_CSS + AURORA_CSS + """
-  aside { width:280px; background:rgba(4,8,14,.72);
-          backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
-          padding:14px; display:flex; flex-direction:column; gap:8px;
-          border-right:1px solid rgba(59,130,246,.22); z-index:2; }
-  .logo { font-size:20px; font-weight:700; padding:6px 8px 12px; letter-spacing:.4px;
-          background:linear-gradient(90deg,#60a5fa,#34d399);
+  aside { width:288px; background:rgba(3,8,14,.74); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px);
+          padding:18px 14px 14px; display:flex; flex-direction:column; gap:10px; border-right:1px solid var(--line); z-index:3; }
+  .brand { display:flex; align-items:center; gap:11px; padding:2px 6px 14px; }
+  .mark { width:34px; height:34px; border-radius:10px; background:var(--grad); display:grid; place-items:center;
+          box-shadow:0 6px 22px -4px rgba(45,212,191,.55), inset 0 1px 0 rgba(255,255,255,.35); }
+  .logo { font-size:20px; font-weight:700; letter-spacing:.2px; background:var(--grad-h);
           -webkit-background-clip:text; background-clip:text; color:transparent; }
-  .newchat { background:var(--panel); border:1px solid var(--line); color:var(--text);
-             padding:10px 12px; border-radius:10px; cursor:pointer; text-align:left;
-             font-size:14px; }
-  .newchat:hover { background:rgba(59,130,246,.15); border-color:rgba(59,130,246,.4); }
-  .searchrow { display:flex; gap:6px; }
-  .searchrow input { flex:1; min-width:0; background:rgba(8,14,22,.7);
-                     border:1px solid var(--line); color:var(--text); border-radius:10px;
-                     padding:9px 11px; font:inherit; font-size:13px; outline:none; }
-  .searchrow input:focus { border-color:rgba(52,211,153,.5); }
-  #searchbtn { width:38px; border:1px solid var(--line); background:rgba(8,14,22,.7);
-               color:var(--dim); border-radius:10px; cursor:pointer; font-size:14px; }
-  #searchbtn:hover { color:var(--text); border-color:rgba(96,165,250,.5); }
-  .stitle { font-size:11px; text-transform:uppercase; letter-spacing:1px;
-            color:var(--dim); padding:6px 8px 0; }
-  .chatlist { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px;
-              padding:6px 2px 6px 0; min-height:0; }
-  .chatcard { position:relative; border:1px solid var(--line); background:transparent;
-              color:var(--text); border-radius:11px; padding:9px 30px 9px 11px;
-              cursor:pointer; flex-shrink:0; }
-  .chatcard:hover { background:rgba(56,189,248,.08); }
-  .chatcard.sel { border-color:rgba(52,211,153,.55);
-                  background:linear-gradient(90deg, rgba(59,130,246,.14), rgba(52,211,153,.10)); }
-  .chatcard .ct { font-size:13.5px; font-weight:600; white-space:nowrap;
-                  overflow:hidden; text-overflow:ellipsis; padding-right:4px; }
-  .chatcard .cp { font-size:11.5px; color:var(--dim); margin-top:2px;
-                  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .cactions { position:absolute; top:7px; right:6px; display:none; gap:2px; }
-  .chatcard:hover .cactions { display:flex; }
-  .cbtn { border:none; background:transparent; color:var(--dim); cursor:pointer;
-          font-size:12px; padding:2px 5px; border-radius:6px; }
-  .cbtn:hover { color:var(--text); background:rgba(125,180,220,.12); }
-  .noresults { color:var(--dim); font-size:12.5px; text-align:center; padding:14px 6px; }
-  .foot { border-top:1px solid var(--line); padding-top:10px; font-size:12px;
-          color:var(--dim); display:flex; flex-direction:column; gap:8px; }
-  .foot .who { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .foot .who b { color:var(--text); }
-  #signout { border:1px solid var(--line); background:transparent; color:var(--dim);
-             font-size:12px; padding:7px 10px; border-radius:9px; cursor:pointer;
-             text-align:left; }
-  #signout:hover { color:var(--text); border-color:rgba(52,211,153,.5); }
-  main { flex:1; display:flex; flex-direction:column; z-index:1; min-width:0; }
-  header { padding:12px 22px; border-bottom:1px solid rgba(52,211,153,.2); font-size:14px;
-           color:var(--dim); background:rgba(4,8,14,.5);
-           backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
-           display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-  header b { color:var(--text); }
-  #modelsel { background:rgba(8,14,22,.75); color:var(--text); border:1px solid var(--line);
-              border-radius:10px; padding:7px 10px; font:inherit; font-size:13.5px;
-              cursor:pointer; outline:none; }
-  #modelsel:hover { border-color:rgba(96,165,250,.5); }
-  #chat { flex:1; overflow-y:auto; padding:24px 0; }
-  .inner { max-width:760px; margin:0 auto; padding:0 22px; display:flex;
-           flex-direction:column; gap:22px; }
-  .row { display:flex; gap:14px; }
+  .ver { font-size:10px; font-weight:600; letter-spacing:1.2px; color:var(--mute); margin-left:2px; }
+  .newchat { display:flex; align-items:center; gap:10px; background:var(--panel); border:1px solid var(--line);
+             padding:11px 13px; border-radius:12px; cursor:pointer; font-size:14px; font-weight:500;
+             transition:all .2s var(--ease); }
+  .newchat:hover { border-color:rgba(45,212,191,.5); background:linear-gradient(90deg,rgba(59,130,246,.16),rgba(52,211,153,.1));
+                   transform:translateY(-1px); }
+  .searchrow { display:flex; gap:8px; }
+  .searchrow input { flex:1; min-width:0; background:var(--panel); border:1px solid var(--line); color:var(--text);
+                     border-radius:12px; padding:10px 12px; font:inherit; font-size:13.5px; outline:none;
+                     transition:all .2s var(--ease); }
+  .searchrow input:focus { border-color:rgba(45,212,191,.5); box-shadow:0 0 0 4px rgba(45,212,191,.07); }
+  .searchrow input::placeholder { color:var(--mute); }
+  #searchbtn { border:1px solid var(--line); background:var(--panel); color:var(--dim); border-radius:12px;
+               width:40px; flex-shrink:0; cursor:pointer; display:grid; place-items:center; transition:all .2s var(--ease); }
+  #searchbtn:hover { color:var(--text); border-color:rgba(45,212,191,.5); }
+  .stitle { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1.3px;
+            color:var(--mute); padding:14px 8px 2px; }
+  .chatlist { display:flex; flex-direction:column; gap:8px; overflow-y:auto; flex:1; min-height:0; padding:2px; }
+  .chatcard { position:relative; border:1px solid var(--line); background:rgba(9,17,27,.35); border-radius:14px;
+              padding:11px 13px; cursor:pointer; text-align:left; transition:all .2s var(--ease); animation:rise .35s var(--ease) backwards; }
+  .chatcard:hover { background:rgba(56,189,248,.07); border-color:var(--line2); }
+  .chatcard.sel { border-color:rgba(45,212,191,.55); background:linear-gradient(120deg,rgba(59,130,246,.18),rgba(52,211,153,.1));
+                  box-shadow:0 8px 28px -14px rgba(45,212,191,.6); }
+  .chatcard.sel::before { content:''; position:absolute; left:-1px; top:20%; bottom:20%; width:3px;
+                          border-radius:3px; background:var(--grad); }
+  .ct { font-weight:600; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:46px; }
+  .cp { font-size:11.5px; color:var(--dim); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cactions { position:absolute; right:9px; top:9px; display:flex; gap:4px; opacity:0; transition:opacity .15s; }
+  .chatcard:hover .cactions, .chatcard.sel .cactions { opacity:1; }
+  .cbtn { border:1px solid var(--line); background:rgba(9,17,27,.8); color:var(--dim); border-radius:8px;
+          width:24px; height:24px; cursor:pointer; display:grid; place-items:center; transition:all .2s; }
+  .cbtn:hover { color:var(--text); border-color:rgba(45,212,191,.5); }
+  .cbtn.del:hover { color:#f87171; border-color:rgba(248,113,113,.5); }
+  .noresults { color:var(--mute); font-size:12.5px; text-align:center; padding:18px 8px; line-height:1.6; }
+  .foot { margin-top:auto; display:flex; gap:10px; align-items:flex-start; font-size:11.5px; color:var(--dim);
+          padding:12px; line-height:1.55; border:1px solid var(--line); border-radius:12px; background:rgba(9,17,27,.4); }
+  .live { width:8px; height:8px; border-radius:50%; background:var(--green); margin-top:5px; flex-shrink:0;
+          box-shadow:0 0 0 0 rgba(52,211,153,.6); animation:pulse 2.4s infinite; }
+  @keyframes pulse { 70% { box-shadow:0 0 0 8px rgba(52,211,153,0); } 100% { box-shadow:0 0 0 0 rgba(52,211,153,0); } }
+  .footcol { display:flex; flex-direction:column; gap:7px; min-width:0; }
+  .footcol .who { font-size:12px; color:var(--text); white-space:normal; }
+  .footcol .who b { color:var(--teal); font-weight:600; word-break:break-all; }
+  #signout { align-self:flex-start; border:1px solid var(--line); background:transparent; color:var(--dim);
+             font-size:11.5px; padding:4px 11px; border-radius:99px; cursor:pointer; transition:all .2s; }
+  #signout:hover { color:var(--text); border-color:rgba(45,212,191,.5); }
+  .ftext { font-size:11px; color:var(--mute); line-height:1.55; }
+  main { flex:1; min-width:0; display:flex; flex-direction:column; z-index:1; }
+  header { display:flex; align-items:center; gap:12px; padding:11px 24px; border-bottom:1px solid var(--line);
+           font-size:13.5px; color:var(--dim); background:rgba(3,8,14,.5); backdrop-filter:blur(16px);
+           -webkit-backdrop-filter:blur(16px); }
+  header .mselwrap { display:flex; align-items:center; gap:10px; }
+  #modelsel { background:transparent; border:1px solid var(--line); color:var(--text); font:inherit; font-size:13.5px;
+              font-weight:600; border-radius:10px; padding:6px 10px; cursor:pointer; transition:all .2s var(--ease); }
+  #modelsel:hover { border-color:var(--line2); }
+  #modelsel option { background:#0a1420; color:var(--text); }
+  .badge { font-size:10px; padding:3px 9px; border-radius:99px; background:var(--grad); color:#03120f;
+           font-weight:700; white-space:nowrap; }
+  .hspacer { flex:1; }
+  .burger { display:none; background:var(--panel); border:1px solid var(--line); border-radius:9px;
+            padding:7px; cursor:pointer; color:var(--dim); }
+  #chat { flex:1; overflow-y:auto; padding:28px 0 12px; scroll-behavior:smooth; }
+  .inner { max-width:780px; margin:0 auto; padding:0 24px; display:flex; flex-direction:column; gap:26px; }
+  .row { display:flex; gap:14px; animation:rise .45s var(--ease) backwards; }
+  @keyframes rise { from { opacity:0; transform:translateY(10px); } }
   .row.user { justify-content:flex-end; }
-  .avatar { width:30px; height:30px; border-radius:8px;
-            background:linear-gradient(135deg,#3b82f6,#34d399);
-            display:flex; align-items:center; justify-content:center; font-weight:700;
-            font-size:14px; flex-shrink:0; }
-  .row.user .bubble { background:rgba(30,45,60,.65); border:1px solid rgba(125,180,220,.15);
-                      border-radius:18px; padding:12px 16px;
-                      max-width:75%; white-space:pre-wrap; line-height:1.55; }
-  .row.ai .content { max-width:calc(100% - 44px); line-height:1.65;
-                     white-space:pre-wrap; }
-  .status { color:var(--dim); font-size:13px; font-style:italic; }
-  details.think { margin-bottom:10px; font-size:13px; }
-  details.think summary { cursor:pointer; color:var(--dim); font-style:italic; }
-  details.think .tbody { color:var(--dim); white-space:pre-wrap; border-left:2px solid
-                         rgba(52,211,153,.5); padding:6px 0 6px 12px; margin-top:6px; }
-  .cursor { display:inline-block; width:8px; height:16px;
-            background:linear-gradient(180deg,#3b82f6,#34d399);
-            animation:blink 1s steps(2) infinite; vertical-align:-2px; }
+  .avatar { width:32px; height:32px; border-radius:10px; background:var(--grad); display:grid; place-items:center;
+            flex-shrink:0; box-shadow:0 4px 16px -4px rgba(45,212,191,.5); }
+  .row.user .bubble { background:linear-gradient(135deg,rgba(59,130,246,.22),rgba(45,212,191,.12));
+                      border:1px solid rgba(96,165,250,.28); border-radius:20px 20px 6px 20px; padding:12px 17px;
+                      max-width:78%; white-space:pre-wrap; line-height:1.6; }
+  .row.ai .content { flex:1; min-width:0; line-height:1.7; white-space:pre-wrap; font-size:15px; }
+  .who { font-size:12px; font-weight:600; color:var(--dim); margin-bottom:6px; letter-spacing:.2px; white-space:normal; }
+  .who span { font-weight:400; color:var(--mute); }
+  .status { color:var(--dim); font-size:13px; white-space:normal; }
+  .status:empty { display:none; }
+  .tcard { display:flex; align-items:center; gap:6px; height:46px; margin:0 0 8px; overflow:hidden; white-space:normal;
+           animation:rise .5s var(--ease) .3s backwards;
+           transition:height .45s var(--ease),opacity .3s,margin .45s var(--ease); }
+  .tcard.out { height:0; margin:0; opacity:0; }
+  .tvid { width:46px; height:46px; flex:none; border-radius:50%; object-fit:cover; mix-blend-mode:screen;
+          -webkit-mask-image:radial-gradient(circle closest-side,#000 64%,transparent 100%);
+          mask-image:radial-gradient(circle closest-side,#000 64%,transparent 100%); }
+  .torb { display:none; width:28px; height:28px; margin:9px; flex:none; border-radius:50%; filter:blur(4px);
+          background:conic-gradient(#3b82f6,#2dd4bf,#34d399,#3b82f6); animation:spin 4s linear infinite; }
+  .novideo .torb { display:block; }
+  .novideo .tvid { display:none; }
+  @keyframes spin { to { transform:rotate(1turn); } }
+  .tlabel { display:flex; align-items:center; gap:10px; font-size:14px; letter-spacing:.2px; }
+  .tt { background:linear-gradient(90deg,#7d97a8 20%,#fff 50%,#7d97a8 80%); background-size:220% 100%;
+        -webkit-background-clip:text; background-clip:text; color:transparent; animation:shim 2.2s linear infinite; }
+  .tt::after { content:''; animation:dots 1.4s steps(1) infinite; }
+  @keyframes dots { 25% { content:'.'; } 50% { content:'..'; } 75% { content:'...'; } }
+  @keyframes shim { to { background-position:-220% 0; } }
+  .tmeta { color:var(--mute); font-size:12.5px; font-variant-numeric:tabular-nums; }
+  details.think { margin:0 0 12px; font-size:13px; white-space:normal; }
+  details.think summary { display:inline-flex; align-items:center; gap:8px; cursor:pointer; list-style:none;
+          color:var(--dim); padding:6px 13px; border:1px solid var(--line); border-radius:99px; background:var(--panel);
+          transition:all .2s; user-select:none; }
+  details.think summary::-webkit-details-marker { display:none; }
+  details.think summary:hover, details.think[open] summary { color:var(--text); border-color:rgba(45,212,191,.45); }
+  details.think .chev { transition:transform .2s; }
+  details.think[open] .chev { transform:rotate(90deg); }
+  .tbody { margin-top:9px; padding:10px 14px; color:var(--dim); font-size:13px; line-height:1.65; white-space:pre-wrap;
+           background:rgba(9,17,27,.45); border-left:2px solid; border-image:linear-gradient(180deg,#3b82f6,#34d399) 1; }
+  .cursor { display:inline-block; width:7px; height:17px; background:var(--grad); vertical-align:-3px;
+            border-radius:2px; animation:blink 1s steps(2) infinite; }
   @keyframes blink { 50% { opacity:0; } }
-  .composer { padding:14px 22px 22px; }
-  .box { max-width:760px; margin:0 auto; display:flex; gap:10px; align-items:flex-end;
-         background:rgba(8,14,22,.75); backdrop-filter:blur(16px);
-         -webkit-backdrop-filter:blur(16px); border:1px solid rgba(59,130,246,.25);
-         border-radius:26px; padding:10px 10px 10px 18px;
-         box-shadow:0 0 34px rgba(16,185,129,.08); }
-  textarea { flex:1; background:transparent; border:none; outline:none; resize:none;
-             color:var(--text); font:inherit; max-height:140px; line-height:1.5; }
-  #send { width:38px; height:38px; border-radius:50%; border:none; cursor:pointer;
-          background:linear-gradient(135deg,#3b82f6,#34d399); color:#fff;
-          font-size:17px; flex-shrink:0; }
-  #send:disabled { background:#2a3947; }
-  #webbtn { height:38px; border-radius:19px; cursor:pointer; flex-shrink:0;
-            border:1px solid var(--line); background:transparent; color:var(--dim);
-            font-size:12.5px; padding:0 14px; display:flex; align-items:center; gap:6px;
-            font-family:inherit; transition:all .2s; }
-  #webbtn:hover { color:var(--text); border-color:rgba(96,165,250,.5); }
-  #webbtn.on { color:#fff; border-color:transparent;
-               background:linear-gradient(135deg,#3b82f6,#34d399); }
-  .srclink { display:inline-block; margin-top:8px; font-size:12px; color:#60a5fa;
-             text-decoration:none; border:1px solid rgba(96,165,250,.3);
-             padding:3px 10px; border-radius:99px; }
-  .srclink:hover { color:#34d399; border-color:rgba(52,211,153,.5); }
-  .hint { text-align:center; font-size:11px; color:var(--dim); margin-top:8px; }
-  .welcome { text-align:center; margin-top:11vh; }
-  .welcome h1 { font-size:32px; font-weight:700;
-                background:linear-gradient(90deg,#60a5fa,#34d399);
-                -webkit-background-clip:text; background-clip:text; color:transparent; }
-  .welcome .ver { font-size:11px; letter-spacing:2px; text-transform:uppercase;
-                  color:var(--dim); margin-top:6px; }
-  .welcome p { color:var(--dim); margin-top:10px; font-size:14px; }
-  .chips { display:flex; flex-wrap:wrap; gap:8px; justify-content:center;
-           margin-top:26px; max-width:560px; margin-left:auto; margin-right:auto; }
-  .chip { border:1px solid var(--line); background:rgba(8,14,22,.6);
-          color:var(--text); font-size:13px; padding:8px 14px; border-radius:99px;
-          cursor:pointer; transition:all .15s; }
-  .chip:hover { border-color:rgba(52,211,153,.55);
-                background:linear-gradient(90deg, rgba(59,130,246,.15), rgba(52,211,153,.12)); }
-  .dots { display:inline-flex; gap:4px; padding:4px 0; }
-  .dots i { width:6px; height:6px; border-radius:50%;
-            background:linear-gradient(135deg,#3b82f6,#34d399);
-            animation:bounce 1.2s infinite; }
-  .dots i:nth-child(2) { animation-delay:.15s; }
-  .dots i:nth-child(3) { animation-delay:.3s; }
-  @keyframes bounce { 0%,60%,100% { transform:translateY(0); opacity:.4; }
-                      30% { transform:translateY(-5px); opacity:1; } }
-  .copy { border:1px solid var(--line); background:transparent; color:var(--dim);
-          font-size:11px; padding:3px 10px; border-radius:8px; cursor:pointer;
-          margin-top:8px; }
+  .srclink { display:inline-block; margin:10px 8px 0 0; font-size:12px; color:#7cb4ff; text-decoration:none;
+             border:1px solid rgba(96,165,250,.32); padding:4px 12px; border-radius:99px; transition:all .2s; }
+  .srclink:hover { color:var(--green); border-color:rgba(52,211,153,.55); }
+  .learnnote { display:inline-block; margin:10px 8px 0 0; font-size:11.5px; color:var(--teal);
+               border:1px solid rgba(45,212,191,.35); padding:4px 12px; border-radius:99px; }
+  .copy { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); background:transparent;
+          color:var(--dim); font-size:11.5px; padding:4px 11px; border-radius:99px; cursor:pointer; margin-top:10px;
+          transition:all .2s; }
   .copy:hover { color:var(--text); border-color:rgba(52,211,153,.5); }
-  .box:focus-within { border-color:rgba(52,211,153,.45);
-                      box-shadow:0 0 24px rgba(52,211,153,.12); }
-  .learnnote { display:block; font-size:11px; color:var(--dim); margin-top:6px;
-               font-style:italic; }
-  @media (max-width:760px) {
-    aside { position:fixed; left:-290px; transition:left .2s; height:100vh; }
-    aside.open { left:0; }
-    .burger { display:block !important; }
+  .composer { padding:10px 24px 20px; }
+  .box { max-width:780px; margin:0 auto; display:flex; gap:10px; align-items:flex-end; background:rgba(7,14,22,.78);
+         backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); border:1px solid var(--line2);
+         border-radius:28px; padding:9px 9px 9px 12px; transition:all .25s var(--ease);
+         box-shadow:0 18px 50px -24px rgba(0,0,0,.9); }
+  .box:focus-within { border-color:rgba(45,212,191,.55);
+                      box-shadow:0 0 0 4px rgba(45,212,191,.08),0 0 36px rgba(59,130,246,.18); }
+  textarea { flex:1; background:transparent; border:none; outline:none; resize:none; color:var(--text); font:inherit;
+             font-size:15px; max-height:150px; line-height:1.5; padding:9px 4px; }
+  textarea::placeholder { color:var(--mute); }
+  #webbtn { height:38px; border-radius:19px; cursor:pointer; flex-shrink:0; border:1px solid var(--line);
+            background:transparent; color:var(--dim); font-size:12.5px; padding:0 14px 0 11px; display:flex;
+            align-items:center; gap:7px; transition:all .2s; align-self:flex-end; margin-bottom:0; }
+  #webbtn:hover { color:var(--text); border-color:rgba(96,165,250,.5); }
+  #webbtn.on { color:#03120f; font-weight:600; border-color:transparent; background:var(--grad); }
+  #send { width:40px; height:40px; border-radius:50%; border:none; cursor:pointer; background:var(--grad);
+          color:#03120f; flex-shrink:0; display:grid; place-items:center; transition:all .2s var(--ease);
+          box-shadow:0 6px 20px -6px rgba(45,212,191,.7); }
+  #send:hover:not(:disabled) { transform:scale(1.07); }
+  #send:disabled { background:#1b2a37; color:var(--mute); box-shadow:none; cursor:default; }
+  .hint { text-align:center; font-size:11.5px; color:var(--mute); margin-top:10px; }
+  .welcome { text-align:center; margin-top:8vh; animation:rise .6s var(--ease) backwards; }
+  .orb { width:78px; height:78px; margin:0 auto 22px; border-radius:50%; position:relative; background:var(--grad);
+         box-shadow:0 0 70px rgba(45,212,191,.45), inset 0 2px 0 rgba(255,255,255,.4); display:grid; place-items:center; }
+  .orb::after { content:''; position:absolute; inset:-9px; border-radius:50%; border:1px solid rgba(45,212,191,.35);
+                animation:ring 3.2s ease-out infinite; }
+  @keyframes ring { from { transform:scale(.9); opacity:1; } to { transform:scale(1.4); opacity:0; } }
+  .welcome h1 { font-size:34px; font-weight:700; letter-spacing:-.4px; background:var(--grad-h);
+                -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .welcome .sub { font-size:11px; letter-spacing:2.2px; text-transform:uppercase; color:var(--mute); margin-top:8px; }
+  .welcome p { color:var(--dim); margin-top:12px; font-size:15px; }
+  .chips { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin:30px auto 0; max-width:600px; }
+  .chip { text-align:left; border:1px solid var(--line); background:rgba(9,17,27,.55); padding:13px 16px;
+          border-radius:14px; cursor:pointer; font-size:14px; transition:all .2s var(--ease);
+          backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
+  .chip small { display:block; font-size:10.5px; font-weight:600; letter-spacing:1.2px; text-transform:uppercase;
+                color:var(--teal); margin-bottom:4px; }
+  .chip:hover { transform:translateY(-2px); border-color:rgba(45,212,191,.5);
+                background:linear-gradient(120deg,rgba(59,130,246,.16),rgba(52,211,153,.1)); }
+  .scrim { display:none; }
+  @media (max-width:820px) {
+    aside { position:fixed; left:0; top:0; bottom:0; transform:translateX(-105%); transition:transform .3s var(--ease); }
+    body.nav aside { transform:none; }
+    body.nav .scrim { display:block; position:fixed; inset:0; z-index:2; background:rgba(0,0,0,.55); }
+    .burger { display:block; } header { padding:11px 16px; }
+    .chips { grid-template-columns:1fr; } .composer { padding:8px 14px 16px; } .inner { padding:0 16px; }
+    #webbtn span { display:none; } #webbtn { padding:0 11px; }
   }
-  .burger { display:none; background:transparent; border:1px solid var(--line);
-            color:var(--text); border-radius:8px; padding:6px 10px; cursor:pointer;
-            margin-right:10px; }
+  @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation-duration:.01ms !important;
+    animation-iteration-count:1 !important; transition-duration:.01ms !important; scroll-behavior:auto !important; } }
 </style>
 </head>
 <body>
 """ + AURORA_BLOBS + """
+<div class="scrim" id="scrim"></div>
 <aside>
-  <div class="logo">Novi<span>us</span></div>
-  <button class="newchat" id="newchat">+ New chat</button>
+  <div class="brand"><div class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19V5l12 14V5"/></svg></div>
+    <div><span class="logo">Novius</span><span class="ver">V4.0</span></div></div>
+  <button class="newchat" id="newchat"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New chat</button>
   <div class="searchrow">
     <input id="search" placeholder="Search your chats...">
-    <button id="searchbtn" title="Search">&#128269;</button>
+    <button id="searchbtn" title="Search chats" aria-label="Search chats"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
   </div>
   <div class="stitle">Your chats</div>
   <div class="chatlist" id="chatlist"></div>
-  <div class="foot">
-    <div class="who">Signed in as <b id="who"></b></div>
-    <button id="signout">Sign out</button>
-  </div>
+  <div class="foot"><span class="live"></span>
+    <div class="footcol">
+      <div class="who">Signed in as <b id="who"></b></div>
+      <button id="signout">Sign out</button>
+      <span class="ftext">Running locally in pure NumPy. Every word is generated live - nothing is scripted.</span>
+    </div></div>
 </aside>
 <main>
-  <header><button class="burger" id="burger">&#9776;</button>Chatting with
-    <select id="modelsel"></select></header>
-  <div id="chat"><div class="inner" id="feed">
-    <div class="welcome"><h1>Welcome to Novi<span>us</span></h1>
-    <div class="ver">V4.0 &middot; four models &middot; learns from your chats</div>
-    <p>Pick a model in the top bar, then say anything. Your chats are saved here.</p>
-    <div class="chips">
-      <button class="chip">What is love?</button>
-      <button class="chip">what is 23*7</button>
-      <button class="chip">what is a black hole?</button>
-      <button class="chip">write a python function that reverses a list</button>
-      <button class="chip">wsp bro</button>
-      <button class="chip">sqrt 144</button>
-    </div></div>
-  </div></div>
+  <header><button class="burger" id="burger" aria-label="Open menu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    <span>Chatting with</span>
+    <div class="mselwrap"><select id="modelsel" aria-label="Model"></select><span class="badge" id="curbadge"></span></div>
+    <span class="hspacer"></span></header>
+  <div id="chat"><div class="inner" id="feed"></div></div>
   <div class="composer"><div class="box">
-    <button id="webbtn" title="Search the web for real answers">&#127760; Web</button>
-    <textarea id="input" rows="1" placeholder="Message Novius..."></textarea>
-    <button id="send" title="Send">&#8593;</button>
+    <button id="webbtn" aria-pressed="false" title="Search the web for real answers"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/></svg><span>Web</span></button>
+    <textarea id="input" rows="1" aria-label="Message" placeholder="Message Novius..."></textarea>
+    <button id="send" title="Send" aria-label="Send" disabled></button>
   </div>
-  <div class="hint">Novius is a lightweight open-source AI trained on
-  Wikipedia, WordNet, code and internet chat - Enter to send.</div></div>
+  <div class="hint">Lightweight open-source AI trained on Wikipedia, WordNet, code and internet chat &middot; Enter to send, Shift+Enter for a new line</div></div>
 </main>
 <script>
-const feed = document.getElementById('feed');
-const chat = document.getElementById('chat');
-const input = document.getElementById('input');
-const sendBtn = document.getElementById('send');
-const webbtn = document.getElementById('webbtn');
-const modelsel = document.getElementById('modelsel');
-let webMode = false;
-let model = 'crusta';
-let busy = false;
-let currentChat = null;
+const $ = id => document.getElementById(id);
+const feed = $('feed'), chat = $('chat'), input = $('input'), sendBtn = $('send'), webbtn = $('webbtn');
+const modelsel = $('modelsel'), curBadge = $('curbadge');
+const MARK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19V5l12 14V5"/></svg>';
+const SEND = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+const STOP = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="3"/></svg>';
+const CHEV = '<svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+const CHIPS = [['Define','What is love?'],['Calculate','what is 23*7'],['Science','what is a black hole?'],
+               ['Explore','tell me about the sun'],['Casual','wsp bro'],['Code','write a python function that reverses a list']];
+const NL = String.fromCharCode(10);
+let webMode = false, model = 'crusta', busy = false, ctrl = null, stick = true, currentChat = null;
+const MODELS = {};
 
-webbtn.onclick = () => { webMode = !webMode;
-  webbtn.classList.toggle('on', webMode);
-  input.placeholder = webMode ? 'Ask anything - Novius will search the web...' :
-                                'Message Novius...'; };
+function welcome() {
+  feed.innerHTML = `<div class="welcome"><div class="orb">${MARK.replace('16','30').replace('16','30')}</div>
+    <h1>Welcome to Novius</h1><div class="sub">V4.0 &middot; four models &middot; learns from your chats</div>
+    <p>Pick a model in the top bar, then say anything. Your chats are saved here.</p>
+    <div class="chips">${CHIPS.map(c => `<button class="chip" data-q="${c[1]}"><small>${c[0]}</small>${c[1]}</button>`).join('')}</div></div>`;
+}
+function sync() { sendBtn.innerHTML = busy ? STOP : SEND;
+  sendBtn.disabled = !busy && !input.value.trim();
+  sendBtn.title = busy ? 'Stop' : 'Send'; }
+function scroll(force) { if (force || stick) chat.scrollTop = chat.scrollHeight; }
+chat.addEventListener('scroll', () => { stick = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 140; });
+
+webbtn.onclick = () => { webMode = !webMode; webbtn.classList.toggle('on', webMode);
+  webbtn.setAttribute('aria-pressed', webMode);
+  input.placeholder = webMode ? 'Ask anything - Novius will search the web...' : 'Message Novius...'; };
 
 async function loadModels() {
   const models = await (await fetch('/api/models')).json();
   modelsel.innerHTML = '';
   for (const m of models) {
+    MODELS[m.id] = m;
     const o = document.createElement('option');
     o.value = m.id;
     o.textContent = m.label + (m.ready ? '' : ' (not trained)');
-    if (m.id === model) o.selected = true;
     modelsel.appendChild(o);
   }
+  if (!MODELS[model]) model = modelsel.options.length ? modelsel.options[0].value : model;
+  modelsel.value = model;
+  const m = MODELS[model];
+  if (m) curBadge.textContent = m.ready ? m.badge : 'not trained';
 }
-modelsel.onchange = () => { model = modelsel.value; };
-
-function scroll() { chat.scrollTop = chat.scrollHeight; }
-
-function welcomeHTML() {
-  return `<div class="welcome"><h1>Welcome to Novi<span>us</span></h1>
-    <p>Pick a model in the top bar, then say anything.</p></div>`;
-}
+modelsel.onchange = () => { model = modelsel.value;
+  const m = MODELS[model];
+  if (m) curBadge.textContent = m.ready ? m.badge : 'not trained'; };
 
 function addUser(text) {
   const w = document.querySelector('.welcome'); if (w) w.remove();
-  const row = document.createElement('div');
-  row.className = 'row user';
-  const b = document.createElement('div');
-  b.className = 'bubble'; b.textContent = text;
-  row.appendChild(b); feed.appendChild(row); scroll();
+  const row = document.createElement('div'); row.className = 'row user';
+  const b = document.createElement('div'); b.className = 'bubble'; b.textContent = text;
+  row.appendChild(b); feed.appendChild(row); scroll(true);
 }
 
 function addAI() {
-  const row = document.createElement('div');
-  row.className = 'row ai';
-  row.innerHTML = `<div class="avatar">N</div>
-    <div class="content"><div class="status"><span class="dots">
-    <i></i><i></i><i></i></span></div>
-    <details class="think" style="display:none">
-      <summary>Thought process</summary><div class="tbody"></div></details>
-    <span class="reply"></span><span class="cursor"></span></div>`;
-  feed.appendChild(row); scroll();
+  const row = document.createElement('div'); row.className = 'row ai';
+  const mlabel = MODELS[model] ? MODELS[model].label : 'Novius';
+  row.innerHTML = `<div class="avatar">${MARK}</div><div class="content"><div class="who">Novius <span>&middot; ${mlabel}</span></div><div class="tcard" role="status"><video class="tvid" muted loop playsinline preload="auto" src="/assets/thinking.mp4"></video><div class="torb"></div><div class="tlabel"><span class="tt">Thinking</span><span class="tmeta"><span class="tsec">0.0</span>s</span></div></div><div class="status"></div><details class="think" style="display:none"><summary>${CHEV}<span class="sum">Thought process</span></summary><div class="tbody"></div></details><span class="reply"></span><span class="cursor"></span></div>`;
+  const v = row.querySelector('.tvid'); v.muted = true;
+  v.onerror = () => row.querySelector('.tcard').classList.add('novideo');
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) v.play().catch(() => {});
+  feed.appendChild(row); scroll(true);
   return row;
 }
 
 function renderStored(messages) {
   feed.innerHTML = '';
-  if (!messages.length) { feed.innerHTML = welcomeHTML(); return; }
+  if (!messages.length) { welcome(); return; }
   for (const m of messages) {
     if (m.role === 'user') { addUser(m.text); continue; }
     const row = document.createElement('div');
     row.className = 'row ai';
-    row.innerHTML = `<div class="avatar">N</div><div class="content"></div>`;
-    row.querySelector('.content').textContent = m.text;
+    row.innerHTML = `<div class="avatar">${MARK}</div><div class="content"><div class="who">Novius</div><span class="reply"></span></div>`;
+    row.querySelector('.reply').textContent = m.text;
     feed.appendChild(row);
   }
-  scroll();
+  scroll(true);
 }
 
 async function loadChats() {
-  const q = document.getElementById('search').value.trim();
+  const q = $('search').value.trim();
   const chats = await (await fetch('/api/chats' + (q ? '?q=' + encodeURIComponent(q) : ''))).json();
-  const box = document.getElementById('chatlist');
+  const box = $('chatlist');
   box.innerHTML = '';
   if (!chats.length) {
     box.innerHTML = '<div class="noresults">' + (q ? 'No chats match your search' : 'No chats yet - say something!') + '</div>';
@@ -2540,9 +2587,7 @@ async function loadChats() {
   for (const c of chats) {
     const d = document.createElement('div');
     d.className = 'chatcard' + (c.id === currentChat ? ' sel' : '');
-    d.innerHTML = `<div class="ct"></div><div class="cp"></div>
-      <div class="cactions"><button class="cbtn ren" title="Rename">&#9998;</button>
-      <button class="cbtn del" title="Delete">&#10005;</button></div>`;
+    d.innerHTML = `<div class="ct"></div><div class="cp"></div><div class="cactions"><button class="cbtn ren" title="Rename"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.8 2.8 0 114 4L7.5 20.5 2 22l1.5-5.5z"/></svg></button><button class="cbtn del" title="Delete"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>`;
     d.querySelector('.ct').textContent = c.title;
     d.querySelector('.cp').textContent = c.preview;
     d.onclick = (e) => { if (e.target.closest('.cbtn')) return; openChat(c.id); };
@@ -2559,13 +2604,15 @@ async function openChat(id) {
     renderStored(c.messages || []);
   } catch (e) {}
   loadChats();
-  if (window.innerWidth <= 760) document.querySelector('aside').classList.remove('open');
+  document.body.classList.remove('nav');
 }
 
 function newChat() {
   currentChat = null;
-  feed.innerHTML = welcomeHTML();
+  welcome();
   loadChats();
+  document.body.classList.remove('nav');
+  input.focus();
 }
 
 async function renameChat(c) {
@@ -2586,106 +2633,97 @@ async function deleteChat(c) {
 async function send() {
   const text = input.value.trim();
   if (!text || busy) return;
-  busy = true; sendBtn.disabled = true; input.value = '';
-  input.style.height = 'auto';
+  busy = true; input.value = ''; input.style.height = 'auto'; sync();
   addUser(text);
-  const row = addAI();
-  const status = row.querySelector('.status');
-  const think = row.querySelector('.think');
-  const tbody = row.querySelector('.tbody');
-  const reply = row.querySelector('.reply');
-  let got = false;
+  const row = addAI(), q = s => row.querySelector(s);
+  const card = q('.tcard'), label = q('.tt'), secEl = q('.tsec'), status = q('.status');
+  const think = q('.think'), tbody = q('.tbody'), reply = q('.reply');
+  const t0 = performance.now(); let ended = false, got = false;
+  const timer = setInterval(() => { secEl.textContent = ((performance.now() - t0) / 1000).toFixed(1); }, 100);
+  function endThink() {
+    if (ended) return; ended = true; clearInterval(timer);
+    const s = ((performance.now() - t0) / 1000).toFixed(1);
+    if (performance.now() - t0 < 350) card.remove();
+    else { card.classList.add('out'); setTimeout(() => card.remove(), 520); }
+    if (tbody.textContent) { q('.sum').textContent = 'Thought for ' + s + 's'; think.style.display = 'block'; }
+  }
+  ctrl = new AbortController();
   try {
-    const resp = await fetch('/api/chat', { method: 'POST',
+    const resp = await fetch('/api/chat', { method: 'POST', signal: ctrl.signal,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, prompt: text, research: webMode,
-                             chat_id: currentChat }) });
-    const reader = resp.body.getReader();
-    const dec = new TextDecoder();
+      body: JSON.stringify({ model, prompt: text, research: webMode, chat_id: currentChat }) });
+    const reader = resp.body.getReader(), dec = new TextDecoder();
     let buf = '';
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
       let i;
-      while ((i = buf.indexOf('\\n')) >= 0) {
+      while ((i = buf.indexOf(NL)) >= 0) {
         const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
         if (!line) continue;
         const evt = JSON.parse(line);
         if (evt.type === 'chat_id') { currentChat = evt.id; }
         else if (evt.type === 'status') {
-          status.innerHTML = evt.text ? '<span class="dots"><i></i><i></i><i></i></span>' : ''; }
-        else if (evt.type === 'think') { think.style.display = 'block';
-          tbody.textContent += evt.text; }
-        else if (evt.type === 'token') { got = true;
-          reply.textContent += evt.text; scroll(); }
+          if (evt.text) label.textContent = evt.text.replace(/[ .]+$/, ''); else endThink(); }
+        else if (evt.type === 'think') tbody.textContent += evt.text;
+        else if (evt.type === 'token') { endThink(); got = true; reply.textContent += evt.text; scroll(); }
         else if (evt.type === 'source') {
-          const a = document.createElement('a');
-          a.className = 'srclink'; a.href = evt.url; a.target = '_blank';
-          a.rel = 'noopener'; a.textContent = '\\u127760 Wikipedia source';
-          row.querySelector('.content').appendChild(a); scroll(); }
+          const a = document.createElement('a'); a.className = 'srclink'; a.href = evt.url;
+          a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Wikipedia source ↗';
+          q('.content').appendChild(a); scroll(); }
         else if (evt.type === 'learned') {
           const n = document.createElement('span');
           n.className = 'learnnote';
-          n.textContent = '\\u2726 learned from this chat';
-          row.querySelector('.content').appendChild(n); }
-        else if (evt.type === 'error') { status.textContent = evt.text; }
+          n.textContent = '✦ learned from this chat';
+          q('.content').appendChild(n); }
+        else if (evt.type === 'error') { endThink(); status.textContent = evt.text; }
       }
     }
-  } catch (e) { status.textContent = 'Connection error: ' + e; }
-  row.querySelector('.cursor').remove();
+  } catch (e) { endThink(); status.textContent = e.name === 'AbortError' ? 'Stopped.' : 'Connection error: ' + e; }
+  endThink(); const cur = q('.cursor'); if (cur) cur.remove();
   if (got) {
-    const cp = document.createElement('button');
-    cp.className = 'copy'; cp.textContent = 'Copy';
+    const cp = document.createElement('button'); cp.className = 'copy';
+    cp.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/></svg><span>Copy</span>';
     cp.onclick = () => { navigator.clipboard.writeText(reply.textContent);
-      cp.textContent = 'Copied!'; setTimeout(() => cp.textContent = 'Copy', 1200); };
-    row.querySelector('.content').appendChild(cp);
+      cp.lastChild.textContent = 'Copied!'; setTimeout(() => cp.lastChild.textContent = 'Copy', 1200); };
+    q('.content').appendChild(cp);
   }
-  if (!got && !think.open && !tbody.textContent)
-    status.innerHTML = status.innerHTML || '(no output)';
-  busy = false; sendBtn.disabled = false; input.focus();
+  if (!got && !status.textContent && !tbody.textContent) status.textContent = '(no output)';
+  busy = false; ctrl = null; sync(); input.focus();
   loadChats();
 }
 
-sendBtn.onclick = send;
-input.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-});
-input.addEventListener('input', () => {
-  input.style.height = 'auto';
-  input.style.height = Math.min(input.scrollHeight, 140) + 'px';
-});
-document.getElementById('newchat').onclick = () => newChat();
-document.querySelectorAll('.chip').forEach(c => {
-  c.onclick = () => { input.value = c.textContent; send(); };
-});
-document.getElementById('burger').onclick = () =>
-  document.querySelector('aside').classList.toggle('open');
-document.getElementById('signout').onclick = async () => {
+sendBtn.onclick = () => busy ? ctrl && ctrl.abort() : send();
+input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!busy) send(); } });
+input.addEventListener('input', () => { input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 150) + 'px'; sync(); });
+feed.addEventListener('click', e => { const c = e.target.closest('.chip'); if (c) { input.value = c.dataset.q; send(); } });
+$('newchat').onclick = () => { if (ctrl) ctrl.abort(); newChat(); };
+$('burger').onclick = () => document.body.classList.toggle('nav');
+$('scrim').onclick = () => document.body.classList.remove('nav');
+$('signout').onclick = async () => {
   await fetch('/api/logout', { method: 'POST' });
   location.reload();
 };
 let searchTimer = null;
-document.getElementById('search').addEventListener('input', () => {
+$('search').addEventListener('input', () => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(loadChats, 200);
 });
-document.getElementById('searchbtn').onclick = () => {
-  document.getElementById('search').focus(); loadChats();
-};
+$('searchbtn').onclick = () => { $('search').focus(); loadChats(); };
 (async () => {
   try {
     const me = await (await fetch('/api/auth/me')).json();
-    document.getElementById('who').textContent = me.name || me.email;
+    $('who').textContent = me.name || me.email;
   } catch (e) { location.reload(); }
 })();
-loadModels();
-loadChats();
-input.focus();
+welcome(); sync(); loadModels(); loadChats(); input.focus();
 </script>
 </body>
 </html>
 """
+
 class GenerationCancelled(Exception):
     pass
 
@@ -2739,6 +2777,47 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return {}
 
+    _ASSET_TYPES = {".mp4": "video/mp4", ".webm": "video/webm",
+                    ".png": "image/png", ".jpg": "image/jpeg"}
+
+    def _send_asset(self, name):
+        name = os.path.basename(name)
+        path = os.path.join(HERE, "assets", name)
+        ctype = self._ASSET_TYPES.get(os.path.splitext(name)[1].lower())
+        if not ctype or not os.path.isfile(path):
+            self._send(404, "text/plain", b"not found")
+            return
+        with open(path, "rb") as f:
+            data = f.read()
+        total = len(data)
+        start, end, code = 0, total - 1, 200
+        m = re.match(r"bytes=(\d*)-(\d*)$",
+                     self.headers.get("Range", "").strip())
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                start = int(m.group(1))
+                end = int(m.group(2)) if m.group(2) else total - 1
+            else:
+                start = max(total - int(m.group(2)), 0)
+            end = min(end, total - 1)
+            if start > end:
+                self._send(416, "text/plain", b"bad range")
+                return
+            code = 206
+        body = data[start:end + 1]
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Cache-Control", "public, max-age=86400")
+        if code == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{total}")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except ConnectionError:
+            pass
+
     def do_GET(self):
         path, _, query = self.path.partition("?")
         params = urllib.parse.parse_qs(query)
@@ -2750,6 +2829,8 @@ class Handler(BaseHTTPRequestHandler):
                            LOGIN_PAGE.encode("utf-8"))
         elif path == "/api/health/live":
             self._json(200, {"status": "ok"})
+        elif path.startswith("/assets/"):
+            self._send_asset(path[len("/assets/"):])
         elif path == "/api/auth/config":
             self._json(200, oauth_configured())
         elif path == "/api/auth/me":
