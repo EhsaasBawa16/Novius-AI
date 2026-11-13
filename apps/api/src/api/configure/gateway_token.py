@@ -1,3 +1,0 @@
-from mistralai_capabilities.apps.credentials import install_gateway_credentials
-
-configure = install_gateway_credentials
