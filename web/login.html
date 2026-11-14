@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#03080f">
+<title>Sign in - Novius</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop stop-color='%233b82f6'/%3E%3Cstop offset='1' stop-color='%2334d399'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3Cpath d='M10 23V9l12 14V9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/web/styles.css">
+<style>
+  .authwrap { position: relative; z-index: 1; margin: auto; width: 100%;
+              display: flex; justify-content: center; padding: 20px; }
+  .authcard { width: 410px; max-width: 100%; background: rgba(6, 12, 20, .72);
+              backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+              border: 1px solid var(--line2); border-radius: 22px; padding: 30px 28px;
+              box-shadow: 0 0 60px rgba(37, 99, 235, .18), 0 0 90px rgba(16, 185, 129, .10);
+              animation: rise .5s var(--ease) backwards; }
+  .brandrow { display: flex; align-items: center; justify-content: center; gap: 11px; }
+  .brandrow .mark { width: 38px; height: 38px; border-radius: 11px; }
+  .brandrow .logo { font-size: 24px; }
+  .verline { text-align: center; font-size: 10.5px; letter-spacing: 2.2px;
+             text-transform: uppercase; color: var(--mute); margin: 10px 0 20px; }
+  .tabs { display: flex; gap: 6px; background: rgba(10, 18, 28, .6); padding: 4px;
+          border-radius: 12px; border: 1px solid var(--line); margin-bottom: 18px; }
+  .tab { flex: 1; border: none; background: transparent; color: var(--dim); padding: 9px;
+         border-radius: 9px; cursor: pointer; font: inherit; font-size: 14px;
+         transition: all .2s var(--ease); }
+  .tab.sel { background: linear-gradient(135deg, rgba(59, 130, 246, .25), rgba(52, 211, 153, .2));
+             color: var(--text); }
+  .authcard input { width: 100%; background: rgba(8, 14, 22, .7); border: 1px solid var(--line);
+                    color: var(--text); border-radius: 12px; padding: 11px 13px; font: inherit;
+                    font-size: 14px; outline: none; margin-bottom: 10px;
+                    transition: all .2s var(--ease); }
+  .authcard input:focus { border-color: rgba(45, 212, 191, .55);
+                          box-shadow: 0 0 0 4px rgba(45, 212, 191, .08); }
+  .authcard input::placeholder { color: var(--mute); }
+  .primary { width: 100%; border: none; border-radius: 12px; padding: 12px; cursor: pointer;
+             color: #03120f; font: inherit; font-size: 15px; font-weight: 700;
+             background: var(--grad); margin-top: 4px; transition: all .2s var(--ease);
+             box-shadow: 0 8px 24px -8px rgba(45, 212, 191, .6); }
+  .primary:hover { transform: translateY(-1px); filter: brightness(1.08); }
+  .or { display: flex; align-items: center; gap: 10px; color: var(--mute); font-size: 12px;
+        margin: 16px 0 10px; }
+  .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .oauth { display: flex; gap: 10px; }
+  .obtn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+          background: rgba(8, 14, 22, .7); border: 1px solid var(--line); color: var(--text);
+          border-radius: 12px; padding: 10px; cursor: pointer; font: inherit; font-size: 13.5px;
+          transition: all .2s var(--ease); }
+  .obtn:hover { border-color: rgba(96, 165, 250, .5);
+                background: linear-gradient(120deg, rgba(59, 130, 246, .12), rgba(52, 211, 153, .08)); }
+  .obtn:disabled { opacity: .45; cursor: not-allowed; }
+  .obtn .gi { color: #60a5fa; font-weight: 700; }
+  .obtn .fi { color: #34d399; font-weight: 700; }
+  .autherr { color: var(--red); font-size: 13px; min-height: 18px; margin-top: 12px;
+             text-align: center; }
+  .note { color: var(--dim); font-size: 11.5px; text-align: center; margin-top: 10px;
+          line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="aurora"><i class="a1"></i><i class="a2"></i><i class="a3"></i><div class="grid"></div></div>
+<div class="authwrap"><div class="authcard">
+  <div class="brandrow"><div class="mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19V5l12 14V5"/></svg></div>
+    <span class="logo">Novius</span></div>
+  <div class="verline">V4.0 &middot; sign in to start chatting</div>
+  <div class="tabs">
+    <button class="tab sel" id="tabin">Sign in</button>
+    <button class="tab" id="tabup">Sign up</button>
+  </div>
+  <form id="formin">
+    <input id="lemail" type="email" placeholder="Email" autocomplete="email">
+    <input id="lpass" type="password" placeholder="Password" autocomplete="current-password">
+    <button class="primary" type="submit">Sign in</button>
+  </form>
+  <form id="formup" style="display:none">
+    <input id="sname" placeholder="Your name" autocomplete="name">
+    <input id="semail" type="email" placeholder="Email" autocomplete="email">
+    <input id="spass" type="password" placeholder="Password (min 6 characters)" autocomplete="new-password">
+    <button class="primary" type="submit">Create account</button>
+  </form>
+  <div class="or">or continue with</div>
+  <div class="oauth">
+    <button class="obtn" id="gbtn" type="button"><span class="gi">G</span> Google</button>
+    <button class="obtn" id="fbtn" type="button"><span class="fi">f</span> Facebook</button>
+  </div>
+  <div class="autherr" id="err"></div>
+  <div class="note">Your chats are saved to your account so you can name them,
+  search them and come back to them anytime.</div>
+</div></div>
+<script>
+(() => {
+  'use strict';
+  const err = document.getElementById('err');
+  const tabin = document.getElementById('tabin');
+  const tabup = document.getElementById('tabup');
+  const formin = document.getElementById('formin');
+  const formup = document.getElementById('formup');
+  tabin.onclick = () => { tabin.classList.add('sel'); tabup.classList.remove('sel');
+    formin.style.display = 'block'; formup.style.display = 'none'; err.textContent = ''; };
+  tabup.onclick = () => { tabup.classList.add('sel'); tabin.classList.remove('sel');
+    formup.style.display = 'block'; formin.style.display = 'none'; err.textContent = ''; };
+
+  async function post(url, body) {
+    const r = await fetch(url, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body) });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || 'Something went wrong');
+    return data;
+  }
+  formin.onsubmit = async (e) => {
+    e.preventDefault(); err.textContent = '';
+    try {
+      await post('/api/auth/login', { email: lemail.value.trim(), password: lpass.value });
+      location.href = '/';
+    } catch (ex) { err.textContent = ex.message; }
+  };
+  formup.onsubmit = async (e) => {
+    e.preventDefault(); err.textContent = '';
+    try {
+      await post('/api/auth/signup', { name: sname.value.trim(),
+        email: semail.value.trim(), password: spass.value });
+      location.href = '/';
+    } catch (ex) { err.textContent = ex.message; }
+  };
+
+  (async () => {
+    try {
+      const cfg = await (await fetch('/api/auth/config')).json();
+      if (!cfg.google) {
+        gbtn.disabled = true;
+        gbtn.title = 'Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable';
+      }
+      if (!cfg.facebook) {
+        fbtn.disabled = true;
+        fbtn.title = 'Set FACEBOOK_CLIENT_ID and FACEBOOK_CLIENT_SECRET to enable';
+      }
+    } catch (ex) { /* config stays default */ }
+  })();
+  gbtn.onclick = () => { location.href = '/api/auth/google'; };
+  fbtn.onclick = () => { location.href = '/api/auth/facebook'; };
+  const q = new URLSearchParams(location.search);
+  if (q.get('error')) err.textContent = q.get('error');
+})();
+</script>
+</body>
+</html>

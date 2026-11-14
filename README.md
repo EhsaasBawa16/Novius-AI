@@ -5,16 +5,94 @@ no ML frameworks. It ships with four GPT-style transformer models trained from
 scratch on modern English (Wikipedia, dictionary definitions, simple stories and
 internet chat).
 
-**No predefined answers.** Every reply is generated token-by-token by the neural
-models. There is no embedded dictionary lookup, no fact base, no canned smalltalk
-— the models learned to answer from the training data itself. The only non-neural
-tool is an exact **calculator** for arithmetic (`what is 23*7`, `sqrt 144`,
-`15% of 80`, `2^10`), which small networks cannot learn reliably.
+Novius answers with a **hybrid brain**: the neural models generate replies
+token-by-token, boosted by a built-in **knowledge base** of everyday knowledge,
+code Q&A and small talk (see below), plus an exact **calculator** for arithmetic
+(`what is 23*7`, `sqrt 144`, `15% of 80`, `2^10`) — something tiny networks can
+never learn reliably.
 
 There is also an optional **Internet research** mode: click the 🌐 **Web**
-toggle in the chat box and Novius will search Wikipedia live and answer from
-real retrieved text, with a source link — handy for facts the tiny models
-never memorized. Toggle it off and replies come purely from the neural nets.
+toggle in the chat box and Novius will search Wikipedia for factual questions,
+then *talk* an answer from the real retrieved text (with a source link) instead
+of just dumping the research at you. Casual messages stay conversational even
+with Web mode on — no random definition dumps.
+
+## Smart replies (V4.0)
+
+- **It understands what you say** — gibberish like `asdfghjkl` or `jjjj kkkk`
+  gets an honest "I couldn't understand that" instead of a made-up answer.
+  Real slang (`wsp bro`, `hiii`, `ngl`) still works.
+- **Stronger grammar** — a polish layer fixes contractions (`im` → I'm,
+  `dont` → don't, `u` → you), capitalization, spacing and punctuation on every
+  generated reply, and repeated-word stutters are removed.
+- **Basic knowledge of many things** — space, science, the human body, math,
+  computers, geography, everyday life and more are answered instantly and
+  correctly from the built-in knowledge base; everything else goes to the
+  neural net.
+- **Honest fallback** — if the network's answer comes out garbled, Novius says
+  it isn't sure and suggests Web mode instead of showing broken text.
+- **Smarter web mode** — only factual questions ("what is…", "who was…",
+  "tell me about…") trigger a live Wikipedia lookup, the search query is
+  cleaned up first ("tell me about the sun" searches *sun*, not the whole
+  sentence), and answers lead with a natural line like "Here's what I found on
+  the web."
+
+**Novius learns from you.** Every chat exchange is saved to `memory.jsonl`
+and a background learner periodically finetunes the models on what you
+talked about — the more you chat, the better it gets. You'll see a small
+"✦ learned from this chat" note when an exchange is added to its memory.
+
+## Accounts & your chats
+
+Sign-in is required: the app opens on a **sign-in / sign-up** page with
+**email + password**, or **Google** and **Facebook** sign-in. Accounts,
+sessions and every named chat are stored locally in JSON files next to
+`novius.py` (`users.json`, `sessions.json`, `chats.json`) — nothing leaves
+your machine.
+
+- **Sidebar** — your named chats in a scrollable list with a live **search**
+  (searches titles *and* all messages, `Ctrl+K` to jump to it), rename (✎) and
+  delete (✕) on hover.
+- **Top bar** — a model dropdown with cards showing each thinker's badge,
+  tagline and parameter count; pick Avion, Qlux, Crusta or Hyron any time.
+- **Model memory** — multi-turn context is rebuilt from the saved chat, so
+  Novius remembers the conversation even after a refresh.
+
+## The interface
+
+The UI lives in `web/` (plain HTML + CSS + vanilla JS, zero dependencies) and
+is served by `novius.py`. If the `web/` folder is missing, the app falls back
+to pages embedded inside `novius.py`.
+
+- **Blue-green aurora world** — drifting light blobs with mouse parallax over
+  a soft grid, glass panels, gradient text and glow throughout.
+- **Thinking card** — a live spinner with an animated *Thinking…* timer while
+  the model works, collapsing into a **"Thought for Xs"** pill that expands to
+  the full thought process. Drop an `assets/thinking.mp4` next to `novius.py`
+  and it becomes the spinner automatically.
+- **Markdown answers** — replies render real markdown: **bold**, *italics*,
+  lists, quotes, links and fenced code blocks with a language label and their
+  own copy button.
+- **Live streaming** — tokens appear as they are generated with a blinking
+  cursor, a **stop button** that aborts generation mid-sentence, and
+  smart auto-scroll that stays out of your way when you scroll up (with a
+  scroll-to-latest button).
+- **Little touches** — toast notifications, welcome orb with suggestion
+  chips, account chip with sign-out, keyboard shortcuts (`Enter` send,
+  `Shift+Enter` newline, `Ctrl+K` search, `Esc` close), full mobile layout
+  with slide-in sidebar, and `prefers-reduced-motion` support.
+
+Google / Facebook sign-in uses standard OAuth2. To enable them, set the
+environment variables and restart:
+
+```bash
+export GOOGLE_CLIENT_ID=...      export GOOGLE_CLIENT_SECRET=...
+export FACEBOOK_CLIENT_ID=...    export FACEBOOK_CLIENT_SECRET=...
+# redirect URI to register: http://127.0.0.1:8763/oauth/callback/<provider>
+```
+
+Without credentials, email sign-up still works and the Google/Facebook
+buttons show a hint instead of failing silently.
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -23,14 +101,15 @@ never memorized. Toggle it off and replies come purely from the neural nets.
 | Model | Params | Architecture | Thinking phase |
 |---|---|---|---|
 | **Avion V3.0** — the very fast thinker | 234k | 2 layers × 64, 4 heads | none (instant) |
-| **Qlux V3.0** — quick thinker | 664k | 2 layers × 128, 4 heads | 12 thought tokens |
-| **Crusta V3.0** — balanced thinker | 1.7M | 3 layers × 192, 6 heads | 24 thought tokens |
-| **Hyron V3.0** — the most powerful thinker | 5.3M | 6 layers × 256, 8 heads | 48 thought tokens |
+| **Qlux V3.0** — quick thinker | 664k | 2 layers × 128, 4 heads | 24 thought tokens |
+| **Crusta V3.0** — balanced thinker | 1.7M | 3 layers × 192, 6 heads | 48 thought tokens |
+| **Hyron V3.0** — the most powerful thinker | 5.3M | 6 layers × 256, 8 heads | 96 thought tokens |
 
 The "thinking" is real: heavier models first generate thought tokens at a higher
 temperature (shown in a collapsible *Thought process* panel), then generate their
-answer. Thoughts are display-only — they are never fed back into the answer
-context, which keeps answers clean.
+answer. In V4.0 every thinker thinks twice as long as before. Thoughts are
+display-only — they are never fed back into the answer context, which keeps
+answers clean.
 
 ## What it learned
 
@@ -43,6 +122,10 @@ Training data (auto-downloaded on first training, ~400 MB total):
 - **TinyStories** — clean, grammatical simple English
 - **Chat corpus** — internet slang, broken grammar (`we was late lol`,
   `should of known better`) and everyday Q&A
+- **CPython source code** — real Python modules, so the models can talk
+  about and write code
+- **Code Q&A** — ~50 question → answer pairs like `how do i reverse a list
+  in python` → `you can use slicing: mylist[::-1]`
 
 Training is a **two-pass** process:
 
@@ -62,7 +145,9 @@ pip install numpy
 
 Pre-trained weights are included in this repo (`weights_*.txt`). To train any
 model from scratch yourself, delete its weights file and run the train command
-below (~30 min for Avion up to a few hours for Hyron on a typical CPU).
+below (~30 min for Avion up to a few hours for Hyron on a typical CPU). If you
+trained before V4.0, delete `corpus.txt` once so the code data is added to the
+main corpus.
 
 ## Usage
 
@@ -72,6 +157,8 @@ python novius.py train              # (re)train all models
 python novius.py train hyron        # (re)train one model
 python novius.py finetune           # re-run the Q&A tuning pass
 python novius.py gen hyron "hi"     # one-shot generation in the terminal
+python novius.py learn              # finetune all models on your saved chats
+python novius.py learn hyron        # finetune one model on your saved chats
 ```
 
 Or use the engine from Python:
@@ -97,13 +184,22 @@ for e in events:
   softmax cross-entropy, Adam with warmup + cosine decay and gradient clipping.
   All forward/backward math is hand-written NumPy, verified against finite
   differences.
-- **Training** — main pass over the full corpus, then a dialogue-format finetune
-  pass (see above).
+- **Training** — main pass over the full corpus (which now includes real
+  Python source code), then a dialogue-format finetune pass (see above).
 - **Calculator tool** — a small AST-whitelisted evaluator handles arithmetic
   prompts before generation; everything else goes to the neural models.
 - **Internet research tool** — optional toggle; searches the Wikipedia API
-  (stdlib `urllib`, no API key) and streams the retrieved summary with a
-  source link; falls back to the neural models when offline or no results.
+  (stdlib `urllib`, no API key), then the model *reads* the retrieved text
+  and talks an answer from it, with a source link. If the grounded answer
+  comes out garbled (tiny models!), it falls back to a short neural
+  lead-in plus the retrieved facts. Falls back to the neural models when
+  offline or no results.
+- **Online learning** — every exchange is saved to `memory.jsonl`; a
+  background learner finetunes the models on the latest ~400 exchanges
+  (mixed with built-in dialogue data to prevent drift) every 6 new chats,
+  hot-swaps the serving weights, and saves the updated weights file. Ask a
+  code question and the model also switches to a colder, more focused
+  sampling profile.
 - **UI** — dependency-free local web server (stdlib `http.server`) with a
   streaming ChatGPT-style interface: black background, animated blue/green
   auroras, glassmorphism panels, suggestion chips, copy buttons, thinking
