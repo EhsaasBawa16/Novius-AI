@@ -90,6 +90,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+WEB_DIR = os.path.join(HERE, "web")
 WIKI_URL = "https://wikitext.smerity.com/wikitext-103-raw-v1.zip"
 WORDNET_URL = ("https://raw.githubusercontent.com/nltk/nltk_data/"
                "gh-pages/packages/corpora/wordnet.zip")
@@ -3368,6 +3369,28 @@ class Handler(BaseHTTPRequestHandler):
     _ASSET_TYPES = {".mp4": "video/mp4", ".webm": "video/webm",
                     ".png": "image/png", ".jpg": "image/jpeg"}
 
+    _WEB_TYPES = {".css": "text/css; charset=utf-8",
+                  ".js": "text/javascript; charset=utf-8",
+                  ".svg": "image/svg+xml"}
+
+    def _page(self, name, fallback):
+        path = os.path.join(WEB_DIR, name)
+        if os.path.isfile(path):
+            with open(path, "rb") as f:
+                return f.read()
+        return fallback.encode("utf-8")
+
+    def _send_web(self, name):
+        name = os.path.basename(name)
+        path = os.path.join(WEB_DIR, name)
+        ctype = self._WEB_TYPES.get(os.path.splitext(name)[1].lower())
+        if not ctype or not os.path.isfile(path):
+            self._send(404, "text/plain", b"not found")
+            return
+        with open(path, "rb") as f:
+            body = f.read()
+        self._send(200, ctype, body, [("Cache-Control", "no-cache")])
+
     def _send_asset(self, name):
         name = os.path.basename(name)
         path = os.path.join(HERE, "assets", name)
@@ -3411,14 +3434,16 @@ class Handler(BaseHTTPRequestHandler):
         params = urllib.parse.parse_qs(query)
         if path in ("/", "/index.html"):
             if self._user():
-                self._send(200, "text/html; charset=utf-8", PAGE.encode("utf-8"))
+                self._send(200, "text/html; charset=utf-8", self._page("index.html", PAGE))
             else:
                 self._send(200, "text/html; charset=utf-8",
-                           LOGIN_PAGE.encode("utf-8"))
+                           self._page("login.html", LOGIN_PAGE))
         elif path == "/api/health/live":
             self._json(200, {"status": "ok"})
         elif path.startswith("/assets/"):
             self._send_asset(path[len("/assets/"):])
+        elif path.startswith("/web/"):
+            self._send_web(path[len("/web/"):])
         elif path == "/api/auth/config":
             self._json(200, oauth_configured())
         elif path == "/api/auth/me":

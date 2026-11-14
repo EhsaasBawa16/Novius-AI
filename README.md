@@ -51,11 +51,36 @@ sessions and every named chat are stored locally in JSON files next to
 your machine.
 
 - **Sidebar** — your named chats in a scrollable list with a live **search**
-  (searches titles *and* all messages), rename (✎) and delete (✕) on hover.
-- **Top bar** — the model picker lives in the header now; pick Avion, Qlux,
-  Crusta or Hyron for any chat.
+  (searches titles *and* all messages, `Ctrl+K` to jump to it), rename (✎) and
+  delete (✕) on hover.
+- **Top bar** — a model dropdown with cards showing each thinker's badge,
+  tagline and parameter count; pick Avion, Qlux, Crusta or Hyron any time.
 - **Model memory** — multi-turn context is rebuilt from the saved chat, so
   Novius remembers the conversation even after a refresh.
+
+## The interface
+
+The UI lives in `web/` (plain HTML + CSS + vanilla JS, zero dependencies) and
+is served by `novius.py`. If the `web/` folder is missing, the app falls back
+to pages embedded inside `novius.py`.
+
+- **Blue-green aurora world** — drifting light blobs with mouse parallax over
+  a soft grid, glass panels, gradient text and glow throughout.
+- **Thinking card** — a live spinner with an animated *Thinking…* timer while
+  the model works, collapsing into a **"Thought for Xs"** pill that expands to
+  the full thought process. Drop an `assets/thinking.mp4` next to `novius.py`
+  and it becomes the spinner automatically.
+- **Markdown answers** — replies render real markdown: **bold**, *italics*,
+  lists, quotes, links and fenced code blocks with a language label and their
+  own copy button.
+- **Live streaming** — tokens appear as they are generated with a blinking
+  cursor, a **stop button** that aborts generation mid-sentence, and
+  smart auto-scroll that stays out of your way when you scroll up (with a
+  scroll-to-latest button).
+- **Little touches** — toast notifications, welcome orb with suggestion
+  chips, account chip with sign-out, keyboard shortcuts (`Enter` send,
+  `Shift+Enter` newline, `Ctrl+K` search, `Esc` close), full mobile layout
+  with slide-in sidebar, and `prefers-reduced-motion` support.
 
 Google / Facebook sign-in uses standard OAuth2. To enable them, set the
 environment variables and restart:
