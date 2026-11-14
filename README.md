@@ -5,17 +5,37 @@ no ML frameworks. It ships with four GPT-style transformer models trained from
 scratch on modern English (Wikipedia, dictionary definitions, simple stories and
 internet chat).
 
-**No predefined answers.** Every reply is generated token-by-token by the neural
-models. There is no embedded dictionary lookup, no fact base, no canned smalltalk
-— the models learned to answer from the training data itself. The only non-neural
-tool is an exact **calculator** for arithmetic (`what is 23*7`, `sqrt 144`,
-`15% of 80`, `2^10`), which small networks cannot learn reliably.
+Novius answers with a **hybrid brain**: the neural models generate replies
+token-by-token, boosted by a built-in **knowledge base** of everyday knowledge,
+code Q&A and small talk (see below), plus an exact **calculator** for arithmetic
+(`what is 23*7`, `sqrt 144`, `15% of 80`, `2^10`) — something tiny networks can
+never learn reliably.
 
 There is also an optional **Internet research** mode: click the 🌐 **Web**
-toggle in the chat box and Novius will search Wikipedia live, then *talk*
-an answer from the real retrieved text (with a source link) instead of just
-dumping the research at you. Toggle it off and replies come purely from the
-neural nets.
+toggle in the chat box and Novius will search Wikipedia for factual questions,
+then *talk* an answer from the real retrieved text (with a source link) instead
+of just dumping the research at you. Casual messages stay conversational even
+with Web mode on — no random definition dumps.
+
+## Smart replies (V4.0)
+
+- **It understands what you say** — gibberish like `asdfghjkl` or `jjjj kkkk`
+  gets an honest "I couldn't understand that" instead of a made-up answer.
+  Real slang (`wsp bro`, `hiii`, `ngl`) still works.
+- **Stronger grammar** — a polish layer fixes contractions (`im` → I'm,
+  `dont` → don't, `u` → you), capitalization, spacing and punctuation on every
+  generated reply, and repeated-word stutters are removed.
+- **Basic knowledge of many things** — space, science, the human body, math,
+  computers, geography, everyday life and more are answered instantly and
+  correctly from the built-in knowledge base; everything else goes to the
+  neural net.
+- **Honest fallback** — if the network's answer comes out garbled, Novius says
+  it isn't sure and suggests Web mode instead of showing broken text.
+- **Smarter web mode** — only factual questions ("what is…", "who was…",
+  "tell me about…") trigger a live Wikipedia lookup, the search query is
+  cleaned up first ("tell me about the sun" searches *sun*, not the whole
+  sentence), and answers lead with a natural line like "Here's what I found on
+  the web."
 
 **Novius learns from you.** Every chat exchange is saved to `memory.jsonl`
 and a background learner periodically finetunes the models on what you

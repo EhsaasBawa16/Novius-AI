@@ -965,6 +965,322 @@ here you go: def reverse(s): return s[::-1]
 """
 
 
+# --------------------------------------------------------------------------
+# Built-in knowledge base and small talk. These are retrieval-based: when a
+# user message matches an entry, Novius answers with clean, grammatical text
+# instead of relying only on the tiny neural network.
+# --------------------------------------------------------------------------
+
+KNOWLEDGE_QA = """
+what is the sun
+The sun is the star at the center of our solar system. It is a giant ball of hot glowing gas that gives Earth light and heat.
+what is a black hole
+A black hole is a place in space where gravity is so strong that nothing, not even light, can escape it.
+what is the moon
+The moon is Earth's only natural satellite. It orbits our planet about once every 27 days.
+how many planets are there
+There are eight planets in our solar system: Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus and Neptune.
+what is the biggest planet
+Jupiter is the biggest planet in our solar system. It is so large that all the other planets could fit inside it.
+what is the smallest planet
+Mercury is the smallest planet in our solar system.
+what is a galaxy
+A galaxy is a huge group of stars, gas and dust held together by gravity. Our galaxy is called the Milky Way.
+what is a star
+A star is a giant ball of hot gas that makes its own light, just like our sun.
+what is gravity
+Gravity is the force that pulls objects toward each other. It keeps us on the ground and keeps the planets orbiting the sun.
+who discovered gravity
+Isaac Newton described gravity in the 1600s, famously inspired by watching an apple fall from a tree.
+how fast is light
+Light travels at about 300,000 kilometers per second, which is the fastest speed anything can move.
+what is space
+Space is the vast emptiness beyond Earth's atmosphere where planets, stars and galaxies exist.
+why is the sky blue
+The sky looks blue because air molecules scatter blue sunlight in all directions more than they scatter other colors.
+what is a comet
+A comet is a ball of ice and dust that orbits the sun and grows a glowing tail when it gets close to it.
+what is an eclipse
+An eclipse happens when one object in space blocks another, like when the moon passes in front of the sun.
+how far is the sun
+The sun is about 150 million kilometers away from Earth.
+what is lightning
+Lightning is a giant spark of electricity that jumps between clouds or between a cloud and the ground.
+what is a rainbow
+A rainbow appears when sunlight bends through raindrops and splits into its different colors.
+what is a planet
+A planet is a large round object that orbits a star. Earth is one of eight planets orbiting our sun.
+what is the milky way
+The Milky Way is the galaxy we live in. It contains hundreds of billions of stars, including our sun.
+what is water made of
+Water is made of two hydrogen atoms and one oxygen atom, which is why it is called H2O.
+at what temperature does water boil
+Water boils at 100 degrees Celsius, or 212 degrees Fahrenheit, at sea level.
+at what temperature does water freeze
+Water freezes at 0 degrees Celsius, or 32 degrees Fahrenheit.
+what is the freezing point of water
+Water freezes at 0 degrees Celsius, or 32 degrees Fahrenheit.
+what is evaporation
+Evaporation is when a liquid slowly turns into a gas, like water drying up in the sun.
+what is a volcano
+A volcano is an opening in the Earth's surface where hot melted rock called lava can come out.
+what causes earthquakes
+Earthquakes are caused by sudden movements of the giant rock plates that make up the Earth's surface.
+what is the water cycle
+The water cycle is how water moves around the Earth: it evaporates, forms clouds, falls as rain and flows back to the sea.
+why do we have seasons
+We have seasons because the Earth is tilted, so different parts of the planet get more direct sunlight during the year.
+what is the largest ocean
+The Pacific Ocean is the largest ocean on Earth.
+how many continents are there
+There are seven continents: Africa, Antarctica, Asia, Australia, Europe, North America and South America.
+what is the tallest mountain
+Mount Everest is the tallest mountain on Earth, about 8,849 meters high.
+how old is the earth
+The Earth is about 4.5 billion years old.
+what is the heart
+The heart is the muscle that pumps blood around your body through blood vessels.
+how many bones are in the human body
+An adult human body has 206 bones.
+what is the brain
+The brain is the organ that controls your thoughts, feelings and movements. It is the body's control center.
+what is dna
+DNA is the molecule inside living things that carries the instructions for how they grow and work.
+what is a cell
+A cell is the smallest unit of life. Every living thing is made of cells.
+why do we sleep
+Sleep lets your body rest and repair itself, and it helps your brain store what you learned during the day.
+why do we dream
+No one knows for sure, but many scientists think dreams help your brain process memories and feelings.
+what is blood
+Blood is the red liquid that carries oxygen and nutrients around your body and carries waste away.
+why do we breathe
+We breathe to take in oxygen, which our cells need to turn food into energy.
+what is the immune system
+The immune system is your body's defense against germs and sickness.
+what is photosynthesis
+Photosynthesis is how plants use sunlight, water and carbon dioxide to make their own food and release oxygen.
+what is an atom
+An atom is the tiny building block that everything is made of. Atoms join together to form molecules.
+what is a molecule
+A molecule is a group of atoms joined together, like the two hydrogen atoms and one oxygen atom in water.
+what is energy
+Energy is the ability to do work or make things happen. It comes in forms like heat, light and movement.
+what is evolution
+Evolution is the slow change in living things over many generations, driven by natural selection.
+what is pi
+Pi is a math constant roughly equal to 3.14159. It is the distance around a circle divided by the distance across it.
+what is zero
+Zero is the number that means nothing. Adding zero to a number does not change the number.
+what is a prime number
+A prime number is a whole number bigger than 1 that can only be divided evenly by 1 and itself, like 2, 3, 5 and 7.
+what is a percentage
+A percentage is a way of showing a part of something out of 100. For example, 50 percent means half.
+what is algebra
+Algebra is the part of math that uses letters like x to stand for unknown numbers.
+what is geometry
+Geometry is the part of math that studies shapes, sizes and spaces.
+what is infinity
+Infinity means something without any end or limit.
+what is a fraction
+A fraction shows a part of a whole, like one half or three quarters.
+what is a decimal
+A decimal is a way of writing numbers that are less than one, using a point, like 0.5 for one half.
+what is a computer
+A computer is a machine that stores and processes information by following instructions called programs.
+what is the internet
+The internet is a global network of computers that talk to each other, letting people share information worldwide.
+how does the internet work
+The internet works by sending small packets of data between computers through cables, wifi and routers until they reach the right place.
+what is ai
+AI, or artificial intelligence, is when computers are built to do things that normally need human thinking, like chatting or recognizing images.
+what is python
+Python is a popular programming language known for being simple and readable. Novius itself is written in pure Python.
+what is numpy
+NumPy is a Python library for fast math with big tables of numbers. Novius uses it to run its neural network.
+what is a neural network
+A neural network is a computer program loosely inspired by the brain. It learns patterns from examples instead of following fixed rules.
+what is machine learning
+Machine learning is when a program improves at a task by learning from data instead of being programmed step by step.
+what is ram
+RAM is your computer's short-term memory. It holds data for the programs that are currently running.
+what is an operating system
+An operating system is the main software that manages a computer, like Windows, macOS or Linux.
+what is a browser
+A browser is the app you use to visit websites, like Chrome or Firefox.
+what is wifi
+Wifi is a way for devices to connect to the internet using radio waves instead of cables.
+what is a computer virus
+A computer virus is a harmful program that spreads between computers and can damage or steal data.
+who invented the computer
+Many people contributed, but Charles Babbage designed an early mechanical computer and Alan Turing shaped modern computing.
+what is a noun
+A noun is a word for a person, place, thing or idea, like dog, city or happiness.
+what is a verb
+A verb is a word that describes an action or a state, like run, eat or is.
+what is an adjective
+An adjective is a word that describes a noun, like big, red or happy.
+what is grammar
+Grammar is the set of rules that decides how words fit together in a language.
+what is a sentence
+A sentence is a group of words that expresses a complete thought, usually starting with a capital letter and ending with a period.
+what is the capital of france
+The capital of France is Paris.
+what is the capital of japan
+The capital of Japan is Tokyo.
+what is the capital of india
+The capital of India is New Delhi.
+what is the capital of the usa
+The capital of the United States is Washington, DC.
+what is the biggest country
+Russia is the biggest country in the world by area.
+how many countries are there
+There are about 195 countries in the world today.
+who was einstein
+Albert Einstein was a famous physicist who developed the theory of relativity.
+who is einstein
+Albert Einstein was a famous physicist who developed the theory of relativity.
+what is a hobby
+A hobby is an activity you enjoy doing in your free time, like drawing, gaming or coding.
+how do i stay healthy
+Eat balanced meals, move your body every day, sleep well and drink enough water.
+how much water should i drink
+Most people do well with about 6 to 8 glasses of water a day.
+how do i learn faster
+Practice a little every day, test yourself often, and explain what you learned to someone else.
+how do i make friends
+Be kind, listen well, show real interest in people, and keep showing up.
+how do planes fly
+Planes fly because their wings are shaped so that air moving over them creates lift, which pushes the plane up.
+how do cars work
+Most cars burn fuel in an engine, which turns the wheels. Electric cars use batteries and motors instead.
+how many days are in a year
+There are 365 days in a normal year, and 366 days in a leap year.
+how many hours are in a day
+There are 24 hours in a day.
+how many minutes are in an hour
+There are 60 minutes in an hour.
+what is the meaning of life
+That is a big one! Many people say it is about loving, learning and making things better for others. What do you think?
+do aliens exist
+We have not found any evidence of aliens yet, but the universe is huge, so many scientists keep looking.
+will robots take over
+Nope, robots are tools. They only do what people program and allow them to do.
+what is novius
+Novius is me! A small open-source AI chatbot written in pure Python and NumPy, with no big ML frameworks.
+what are you
+I'm Novius, a small open-source AI chatbot that runs entirely on your computer.
+how do you work
+I'm a small neural network trained from scratch with NumPy. I also use tools like a calculator, a code helper and Wikipedia lookups.
+who trained you
+I was trained from scratch on text using pure Python and NumPy - no big ML frameworks involved.
+"""
+
+_SMALLTALK = {
+    "hi": "Hey! How can I help you today?",
+    "hii": "Hey! What would you like to talk about?",
+    "hiii": "Hey hey! What's on your mind?",
+    "hello": "Hi there! What would you like to talk about?",
+    "hey": "Hey! What's on your mind?",
+    "heyy": "Hey! How's your day going?",
+    "yo": "Yo! What's up?",
+    "yooo": "Yooo! What's happening?",
+    "wsp": "Not much, just hanging out in your browser. What about you?",
+    "wsp bro": "Not much bro, just vibing. What about you?",
+    "wsup": "Hey! What's up with you?",
+    "sup": "Hey! How's it going?",
+    "wassup": "Hey! What's up with you?",
+    "whats up": "Not much! What are you up to?",
+    "hows it going": "Pretty good, thanks for asking! How are you doing?",
+    "how are you": "I'm doing great, thanks! How about you?",
+    "how are u": "I'm doing great, thanks! How about you?",
+    "how r u": "I'm doing great, thanks! How about you?",
+    "how was your day": "Pretty good! I got to chat with you, so that's a win. How was yours?",
+    "who are you": "I'm Novius, a small open-source AI that runs on pure Python and NumPy.",
+    "what is your name": "My name is Novius!",
+    "whats your name": "My name is Novius!",
+    "who made you": "I was built as an open-source project - a tiny language model written from scratch in Python and NumPy.",
+    "who created you": "I was built as an open-source project - a tiny language model written from scratch in Python and NumPy.",
+    "who built you": "I was built as an open-source project - a tiny language model written from scratch in Python and NumPy.",
+    "who trained you": "I was trained from scratch on text using pure Python and NumPy.",
+    "what can you do": "I can chat, do math, write simple Python code and look things up on the web when you turn on Web mode.",
+    "what can u do": "I can chat, do math, write simple Python code and look things up on the web when you turn on Web mode.",
+    "can you help me": "Of course! Ask me anything - I can chat, do math, write simple code or look things up on the web.",
+    "will you help me": "Of course! What do you need help with?",
+    "are you chatgpt": "No, I'm Novius - a much smaller model that runs entirely on your computer.",
+    "are you an ai": "Yes, I'm an AI - a small neural network written in pure Python and NumPy.",
+    "are you real": "I'm as real as code can be!",
+    "are you a robot": "Sort of! I'm a computer program that talks with you.",
+    "how old are you": "I'm a baby in computer years!",
+    "where do you live": "Inside your computer - it's cozy here.",
+    "do you sleep": "Nope, I just vibe in your RAM all night.",
+    "do you have friends": "I have you! And everyone who chats with me.",
+    "tell me a joke": "Why don't scientists trust atoms? Because they make up everything!",
+    "another joke": "What do you call a computer that sings? A Dell!",
+    "tell me a story": "Once upon a time a tiny robot found a lost star and flew it back home. The end.",
+    "sing a song": "La la la, I'm an AI, I sing in binary!",
+    "i love you": "Aww, I love you too! You're the best.",
+    "i am sad": "I'm sorry to hear that. Want to talk about it?",
+    "im sad": "I'm sorry to hear that. Want to talk about it?",
+    "i am happy": "That's awesome! I'm glad you're feeling good.",
+    "im happy": "That's awesome! I'm glad you're feeling good.",
+    "im bored": "Same! Want to talk about something fun?",
+    "i am bored": "Same! Want to talk about something fun?",
+    "im tired": "You should get some rest!",
+    "i am tired": "You should get some rest!",
+    "thank you": "You're welcome! Anytime.",
+    "thanks": "You got it!",
+    "ty": "You're welcome!",
+    "tyty": "Anytime! Happy to help.",
+    "np": "Anytime!",
+    "bye": "See you later!",
+    "goodbye": "Goodbye! Come back soon.",
+    "see ya": "See you later!",
+    "see you": "See you later!",
+    "gn": "Good night, sleep well!",
+    "good night": "Good night, sleep well!",
+    "gm": "Good morning! Hope today treats you well.",
+    "good morning": "Good morning! Hope your day is great.",
+    "lol": "Glad you found that funny!",
+    "lmao": "Glad I could make you laugh!",
+    "ok": "Cool! What else is on your mind?",
+    "okay": "Cool! What else would you like to talk about?",
+    "nice": "Right? Anything else you want to talk about?",
+    "cool": "For sure! What else is on your mind?",
+    "wow": "Right?! Anything else you want to know?",
+    "yes": "Nice! What would you like to talk about?",
+    "no": "Okay! What else is on your mind?",
+    "good": "Glad to hear it! What else is up?",
+    "great": "Awesome! What else is on your mind?",
+    "nice to meet you": "Nice to meet you too! What should we talk about?",
+    "hmm": "Take your time - what are you thinking about?",
+    "hmmm": "Take your time - what are you thinking about?",
+    "ugh": "Rough day? Want to talk about it?",
+    "oof": "Oof, that sounds rough. Want to talk about it?",
+    "bruh": "Bruh. What happened?",
+}
+
+
+def _parse_qa(block):
+    lines = [l.strip() for l in block.strip().splitlines() if l.strip()]
+    return [(lines[i], lines[i + 1]) for i in range(0, len(lines) - 1, 2)]
+
+
+_KB_CACHE = None
+
+
+def _kb_pairs():
+    global _KB_CACHE
+    if _KB_CACHE is None:
+        _KB_CACHE = _parse_qa(KNOWLEDGE_QA) + _parse_qa(CODE_QA)
+    return _KB_CACHE
+
+
+def _kb_dialogue_text(repeat=1):
+    lines = [f"{q}\n{a}" for q, a in _kb_pairs()]
+    return ("\n".join(_qa_to_dialogue(lines)) + "\n") * repeat
+
+
 def _code_dialogue_text(repeat=1):
     lines = [l.strip() for l in CODE_QA.strip().splitlines() if l.strip()]
     out = []
@@ -1020,6 +1336,7 @@ def _build_finetune(top_qa, rest_qa, slang, stories_head):
             + (slang + "\n") * 5
             + (DIALOGUE_CORPUS.strip() + "\n") * 400
             + _code_dialogue_text(40)
+            + _kb_dialogue_text(30)
             + stories_head[:400_000])
 
 
@@ -1237,6 +1554,7 @@ def ensure_corpus():
     parts.append(("\n".join(qa) + "\n") * 3)
     parts.append(("\n".join(top_qa + rest_qa) + "\n") * 60)
     parts.append((slang + "\n") * 100)
+    parts.append((KNOWLEDGE_QA.strip() + "\n") * 20)
     parts.append(_code_text())
 
     ft = _build_finetune(top_qa, rest_qa, slang, stories_head)
@@ -1467,12 +1785,26 @@ _WIKI_SUMMARY = "https://en.wikipedia.org/api/rest_v1/page/summary/"
 _WIKI_HEADERS = {"User-Agent": "Novius/3.0 (educational project)"}
 
 
+def _research_query(prompt):
+    q = prompt.strip().lower().rstrip("?.!").strip()
+    for _ in range(3):
+        nxt = re.sub(r"^(what|who|where|when|why|how) (is|are|was|were|do|does|did) ",
+                     "", q)
+        nxt = re.sub(r"^(tell me|explain|define|describe|search|look up|find|"
+                     r"give me|show me|info|information|history|about) "
+                     r"(about |of |on |for )?", "", nxt)
+        nxt = re.sub(r"^(the|a|an) ", "", nxt)
+        if nxt == q:
+            break
+        q = nxt
+    return q.strip()
+
+
 def _web_research(prompt):
     import urllib.request
     from urllib.parse import quote
-    q = re.sub(r"^(what|who|where|when|why|how) (is|are|was|were|do|does|did)\s+",
-               "", prompt.strip().lower()).strip(" ?.")
-    if not q:
+    q = _research_query(prompt)
+    if not q or len(q) < 2:
         return None
     try:
         url = _WIKI_API + ("?action=query&list=search&format=json&srlimit=1"
@@ -1538,6 +1870,231 @@ def _grounded(text, source):
     if not ans:
         return False
     return sum(1 for w in ans if w in src) / len(ans) >= 0.12
+
+
+_CORE_WORDS = set("""
+the be to of and a in that have it for not on with he as you do at this but
+his by from they we say her she or an will my one all would there their what
+so up out if about who get which go me when make can like time no just him
+know take people into year your good some could them see other than then now
+look only come its over think also back after use two how our work first well
+way even new want because any these give day most us is are was were am been
+being has had did does doing done having i me mine myself we our ours you
+yours where why what which who whom whose can could will would shall should
+may might must very too just only ever never always often sometimes usually
+thing things stuff something anything nothing everything someone anyone
+everyone yes yeah yup nah maybe sure right wrong true false please sorry
+welcome excuse big little long short tall fast slow hot cold warm new old
+bad great nice let got really quite much many more less few lot lots
+""".split())
+
+_INTERNET_WORDS = set("""
+im ive ill id dont cant wont isnt doesnt didnt wasnt arent werent havent
+hasnt hadnt couldnt wouldnt shouldnt thats whats lets wanna gonna gotta tryna
+kinda dunno cuz cya brb btw tbh ngl fr smh wyd wbu hbu wsp wsup bro dude lol
+lmao rofl omg yesss hiii heyy yooo goated bussin sus cringe mid cap fire vibe
+vibing slay yeet bet aight probs tonite rn af gg ez tyty pls plz thx np u ur r
+novius numpy python ai chatbot wikipedia wordnet sqrt sin cos tan pi log math
+calculator code function script program server browser internet computer
+hmm hmmm hm ugh aww oof welp bruh sheesh lowkey deadass yay woohoo oops
+""".split())
+
+_CLARIFY = (
+    "That looks like random characters and I honestly can't understand it. "
+    "Could you type your message in words? I'm good at chatting, math, code "
+    "and web lookups!",
+    "I couldn't understand that one - it looks like random letters. Try "
+    "asking me in plain words and I'll do my best!",
+)
+
+_WEAK_FALLBACK = (
+    "I'm still a small model, so I'm not sure about that one. Turn on Web "
+    "mode for facts, or ask me about science, code or everyday stuff!",
+    "Hmm, I don't have a good answer for that yet. Try Web mode, or ask me "
+    "something about math, code or the world!",
+)
+
+_DICT = None
+_DICT_LOCK = threading.Lock()
+
+
+def _known_words():
+    global _DICT
+    with _DICT_LOCK:
+        if _DICT is None:
+            words = _CORE_WORDS | _INTERNET_WORDS
+            for block in (SLANG_CORPUS, DIALOGUE_CORPUS, CODE_QA, KNOWLEDGE_QA):
+                words |= {w.replace("'", "") for w in
+                          re.findall(r"[a-zA-Z']+", block.lower())}
+            try:
+                words |= set(_common_words())
+            except Exception:
+                pass
+            _DICT = words
+        return _DICT
+
+
+def _wordlike(w):
+    if len(w) > 15:
+        return False
+    if len(set(w)) == 1:
+        return False
+    if re.search(r"(.)\1\1", w):
+        return len(w) <= 6
+    if not (set(w) & set("aeiouy")):
+        return False
+    run = 0
+    for ch in w:
+        run = run + 1 if ch not in "aeiouy" else 0
+        if run >= 3:
+            return False
+    return True
+
+
+def _is_gibberish(prompt):
+    p = prompt.strip()
+    if not p or not re.search(r"[a-zA-Z]", p):
+        return True
+    words = [w.replace("'", "") for w in re.findall(r"[a-zA-Z']+", p.lower())]
+    if not words:
+        return False
+    known = _known_words()
+    good = sum(1 for w in words if w in known or _wordlike(w))
+    n = len(words)
+    if good / n >= 0.6:
+        return False
+    if len(set(words)) / n < 0.5 and n >= 4:
+        return True
+    return good / n < 0.45
+
+
+def _weak_reply(text):
+    words = text.split()
+    if len(words) < 2 or len(text) < 4:
+        return True
+    if len(set(words)) / len(words) < 0.55:
+        return True
+    if len(words) <= 5:
+        return False
+    return _degenerate(text)
+
+
+_CODE_OUT_RE = re.compile(r"\bdef\b|print\(|\bimport\b|lambda|::|\[::|=>")
+
+_CONTRACTIONS = {
+    "im": "I'm", "ive": "I've", "ill": "I'll",
+    "dont": "don't", "cant": "can't", "wont": "won't", "isnt": "isn't",
+    "doesnt": "doesn't", "didnt": "didn't", "wasnt": "wasn't",
+    "arent": "aren't", "werent": "weren't", "havent": "haven't",
+    "hasnt": "hasn't", "hadnt": "hadn't", "couldnt": "couldn't",
+    "wouldnt": "wouldn't", "shouldnt": "shouldn't",
+    "thats": "that's", "whats": "what's", "heres": "here's",
+    "theres": "there's", "lets": "let's", "youre": "you're",
+    "youve": "you've", "theyre": "they're", "wont": "won't",
+    "u": "you", "ur": "your", "r": "are", "cuz": "because",
+    "wanna": "want to", "gonna": "going to", "gotta": "got to",
+    "tryna": "trying to", "kinda": "kind of", "dunno": "don't know",
+    "pls": "please", "plz": "please", "thx": "thanks", "cya": "see you",
+    "probs": "probably", "tbh": "to be honest", "ngl": "not going to lie",
+    "fr": "for real", "idk": "I don't know", "rn": "right now",
+    "hbu": "how about you", "wbu": "what about you",
+    "wyd": "what are you doing",
+}
+
+
+def _polish_reply(text):
+    text = " ".join(text.split())
+    if not text or _CODE_OUT_RE.search(text):
+        return text
+    for k, v in _CONTRACTIONS.items():
+        text = re.sub(r"\b" + k + r"\b", v, text, flags=re.I)
+    text = re.sub(r" ([,.!?;:])", r"\1", text)
+    text = re.sub(r"\b(\w+) \1\b", r"\1", text, flags=re.I)
+    text = re.sub(r"\bi\b", "I", text)
+    text = re.sub(r"(^|[.!?]\s+)([a-z])",
+                  lambda m: m.group(1) + m.group(2).upper(), text)
+    if text[-1] not in ".!?":
+        text = text.rstrip(",;: -") + "."
+    return text
+
+
+_CHITCHAT_RE = re.compile(
+    r"^(hi|hello|hey|heyy|yo|wsp|wsup|sup|wassup|whats up|gm|gn|good ?morning|"
+    r"good ?night|lol|lmao|ok|okay|nice|cool|wow|thanks|thank you|ty|tyty|"
+    r"bye|goodbye|see ya|see you|later|how are you|how r u|hows it going|"
+    r"who are you|whats your name|what is your name|tell me a joke|"
+    r"tell me a story|sing a song|i love you|im sad|i am sad|im happy|"
+    r"i am happy|im bored|i am bored|im tired|i am tired|can you help me|"
+    r"will you help me)\b", re.I)
+
+_RESEARCH_RE = re.compile(
+    r"^(what|who|where|when|why|how|which|is|are|was|were|does|do|did|can|"
+    r"could|tell me about|define|explain|describe|search|look up|find|"
+    r"give me|history of|info about|information about)\b", re.I)
+
+
+def _wants_research(prompt):
+    p = prompt.strip()
+    if len(p.split()) < 3:
+        return False
+    if _CHITCHAT_RE.match(p):
+        return False
+    if _CODE_RE.search(p):
+        return False
+    return bool(_RESEARCH_RE.match(p))
+
+
+def _norm_prompt(s):
+    s = s.lower().replace("'", "").replace("\u2019", "")
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _smalltalk_lookup(prompt):
+    return _SMALLTALK.get(_norm_prompt(prompt))
+
+
+def _stem(w):
+    if w.endswith("ies") and len(w) > 4:
+        return w[:-3] + "y"
+    if w.endswith("s") and len(w) > 3 and not w.endswith("ss"):
+        return w[:-1]
+    return w
+
+
+def _content_words(s):
+    out = set()
+    for w in re.findall(r"[a-z0-9']+", s.lower()):
+        w = w.replace("'", "")
+        if w in _STOPWORDS or len(w) < 2:
+            continue
+        out.add(_stem(w))
+    return out
+
+
+_KB_INDEX = None
+
+
+def _kb_index():
+    global _KB_INDEX
+    if _KB_INDEX is None:
+        _KB_INDEX = [(_content_words(q), a) for q, a in _kb_pairs()]
+    return _KB_INDEX
+
+
+def _kb_lookup(prompt):
+    pw = _content_words(prompt)
+    if not pw:
+        return None
+    best, best_score = None, 0.0
+    for qw, a in _kb_index():
+        inter = len(pw & qw)
+        if not inter:
+            continue
+        score = inter / len(qw) * 0.7 + inter / len(pw) * 0.3
+        if score > best_score:
+            best, best_score = a, score
+    return best if best_score >= 0.55 else None
 
 
 class Engine:
@@ -1621,6 +2178,24 @@ class Engine:
             self._stream_text(answer, emit)
             return answer
 
+        if _is_gibberish(prompt):
+            emit({"type": "status", "text": ""})
+            rng = np.random.default_rng()
+            reply = _CLARIFY[int(rng.integers(0, len(_CLARIFY)))]
+            self._stream_text(reply, emit)
+            return reply
+
+        hit = _smalltalk_lookup(prompt)
+        if hit is None and not (research and _wants_research(prompt)):
+            emit({"type": "status", "text": f"{spec['label']} is thinking ..."})
+            hit = _kb_lookup(prompt)
+        if hit is not None:
+            emit({"type": "status", "text": ""})
+            self._stream_text(hit, emit)
+            if self.record(name, prompt, hit):
+                emit({"type": "learned"})
+            return hit
+
         emit({"type": "status", "text": f"Loading {spec['label']} ..."})
         model, tok = self.load(name)
         gen = dict(spec["gen"])
@@ -1637,7 +2212,7 @@ class Engine:
                 turns += f"user: {u}\nnovius: {a}\n"
         ctx_text = f"{turns}user: {prompt.strip().lower()}\nnovius:"
 
-        if research:
+        if research and _wants_research(prompt):
             emit({"type": "status", "text": "Searching the web ..."})
             found = _web_research(prompt)
             if found is not None:
@@ -1655,27 +2230,38 @@ class Engine:
                     if thoughts.strip():
                         emit({"type": "think", "text": thoughts})
                 emit({"type": "status", "text": ""})
-                answer = _clean_answer(self._generate(
+                answer = _polish_reply(_clean_answer(self._generate(
                     model, tok, web_ctx, block, gen["max_new_tokens"],
                     gen["temperature"], gen["top_k"], None,
-                    gen["rep"]))
-                if not _degenerate(answer) and _grounded(answer, text):
+                    gen["rep"])))
+                if (not _degenerate(answer)
+                        and not _CODE_OUT_RE.search(answer)
+                        and _grounded(answer, text)):
                     self._stream_text(answer, emit)
                     if self.record(name, prompt, answer):
                         emit({"type": "learned"})
                     return answer
-                lead = _clean_answer(self._generate(
+                lead = _polish_reply(_clean_answer(self._generate(
                     model, tok, ctx_text, block, 20, 0.5, 40, None,
-                    gen["rep"]))
-                if _degenerate(lead) or not _grounded(lead, prompt + " " + text):
-                    lead = ""
-                if lead:
-                    self._stream_text(lead + " ", emit)
+                    gen["rep"])))
+                if (_degenerate(lead) or _CODE_OUT_RE.search(lead)
+                        or not _grounded(lead, prompt + " " + text)):
+                    lead = "Here's what I found on the web."
+                self._stream_text(lead + " ", emit)
                 self._stream_text(text, emit)
                 reply = (lead + " " + text).strip()
                 if self.record(name, prompt, reply):
                     emit({"type": "learned"})
                 return reply
+            emit({"type": "status",
+                  "text": "No web results - checking what I know ..."})
+            kb = _kb_lookup(prompt)
+            if kb is not None:
+                emit({"type": "status", "text": ""})
+                self._stream_text(kb, emit)
+                if self.record(name, prompt, kb):
+                    emit({"type": "learned"})
+                return kb
             emit({"type": "status",
                   "text": "No web results - using neural net ..."})
 
@@ -1689,8 +2275,14 @@ class Engine:
                 emit({"type": "think", "text": thoughts})
 
         emit({"type": "status", "text": ""})
-        reply = self._stream(model, tok, ctx_text, block, gen, emit)
-        if self.record(name, prompt, reply):
+        raw = _clean_answer(self._complete(model, tok, ctx_text, block, gen))
+        if _weak_reply(raw):
+            rng = np.random.default_rng()
+            reply = _WEAK_FALLBACK[int(rng.integers(0, len(_WEAK_FALLBACK)))]
+        else:
+            reply = _polish_reply(raw)
+        self._stream_text(reply, emit)
+        if not _weak_reply(raw) and self.record(name, prompt, reply):
             emit({"type": "learned"})
         return reply
 
@@ -1725,7 +2317,7 @@ class Engine:
             out.append(nxt)
         return tok.decode(out[len(ids):])
 
-    def _stream(self, model, tok, context, block, gen, emit):
+    def _complete(self, model, tok, context, block, gen):
         rng = np.random.default_rng()
         ids = tok.encode(context)[-block:] or [0]
         out = list(ids)
@@ -1740,11 +2332,7 @@ class Engine:
                                 or "\nwhat" in raw or "\nuser" in raw
                                 or "user:" in raw[-14:]):
                 break
-            piece = tok.decode([nxt])
-            if piece:
-                emit({"type": "token", "text": piece})
         return tok.decode(out[n_prompt:])
-
 
 ENGINE = Engine()
 
